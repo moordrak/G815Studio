@@ -208,6 +208,8 @@ public sealed class LightingEngine : IDisposable
     /// <summary>Stvarni broj okvira u sekundi poslanih tipkovnici i prosječno trajanje slanja jednog okvira.</summary>
     public double MeasuredFps { get; private set; }
     public double SendMs { get; private set; }
+    public double PacketsPerFrame { get; private set; }
+    private double _packetsAccum;
     private int _framesThisSecond;
     private double _sendMsAccum;
     private long _fpsWindowStart;
@@ -363,6 +365,7 @@ public sealed class LightingEngine : IDisposable
         {
             _kb.SendColors(changes);
             _framesThisSecond++;
+            _packetsAccum += _kb.LastPacketCount;
             _sendMsAccum += (_clock.ElapsedTicks - t0) * 1000.0 / Stopwatch.Frequency;
             lock (_sentValid)
             {
@@ -374,11 +377,17 @@ public sealed class LightingEngine : IDisposable
             }
             LastError = null;
         }
+        catch (HidppException ex) when (ex.ErrorCode == 0x08)
+        {
+            // zauzeto i nakon ponavljanja: ne šalji ponovno cijelu tipkovnicu,
+            // promjene iz ovog okvira ionako nisu označene kao poslane pa idu u idućem
+            Thread.Sleep(10);
+        }
         catch (Exception ex)
         {
             LastError = ex.Message;
             ForceResend();
-            Thread.Sleep(200);
+            Thread.Sleep(50);
         }
     }
 
@@ -401,6 +410,8 @@ public sealed class LightingEngine : IDisposable
         if (span < 1000) return;
         MeasuredFps = _framesThisSecond * 1000.0 / span;
         SendMs = _framesThisSecond > 0 ? _sendMsAccum / _framesThisSecond : 0;
+        PacketsPerFrame = _framesThisSecond > 0 ? _packetsAccum / _framesThisSecond : 0;
+        _packetsAccum = 0;
         _framesThisSecond = 0;
         _sendMsAccum = 0;
         _fpsWindowStart = now;

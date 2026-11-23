@@ -203,31 +203,42 @@ public sealed class G815Keyboard : IDisposable
         try { d.Request(_mr, 0, (byte)(on ? 1 : 0)); } catch (Exception ex) { Log.Write("MR LED: " + ex.Message); }
     }
 
+    /// <summary>Broj paketa poslanih u zadnjem okviru (za dijagnostiku u statusnoj traci).</summary>
+    public int LastPacketCount { get; private set; }
+    public int BusyRetries { get; private set; }
+
     /// <summary>
-    /// Šalje promijenjene boje. Tipke iste boje grupiraju se u jedan paket (do 13 zona),
+    /// Šalje promijenjene boje. Tipke slične boje grupiraju se u jedan paket (do 13 zona),
     /// ostale idu po 4 u paketu. Na kraju ide "commit" (funkcija 7).
+    /// Svaki paket čeka potvrdu tipkovnice, pa se njezin red nikad ne prepuni (greška 0x08 "zauzeto").
     /// </summary>
     public void SendColors(IReadOnlyList<(byte Zone, Color Color)> changes)
     {
         var dev = _dev;
         if (dev == null || _perKey == 0 || changes.Count == 0) return;
+        int packets = 0;
 
+        // Kad se mijenja puno tipki (animacije), slične boje se jače grupiraju:
+        // manje paketa = više FPS-a, a razlika od nekoliko nijansi na LED-icama se ne vidi.
+        int shift = changes.Count > 40 ? 4 : 3;
         var singles = new List<(byte Zone, Color Color)>();
-        // Boje koje se razlikuju za manje od 8 po kanalu idu u isti paket (do 13 tipki),
-        // umjesto po 4 tipke u paketu. Razlika je na LED-icama nevidljiva, a paketa je puno manje.
-        foreach (var group in changes.GroupBy(c => ((c.Color.R >> 3) << 10) | ((c.Color.G >> 3) << 5) | (c.Color.B >> 3)))
+        foreach (var group in changes.GroupBy(c => ((c.Color.R >> shift) << 16) | ((c.Color.G >> shift) << 8) | (c.Color.B >> shift)))
         {
             var list = group.ToList();
             if (list.Count >= 4)
             {
+                // prosječna boja grupe
+                int r = 0, g = 0, b = 0;
+                foreach (var (_, c) in list) { r += c.R; g += c.G; b += c.B; }
+                byte ar = (byte)(r / list.Count), ag = (byte)(g / list.Count), ab = (byte)(b / list.Count);
                 for (int i = 0; i < list.Count; i += 13)
                 {
                     var a = Filled16();
-                    var col = list[0].Color;
-                    a[0] = col.R; a[1] = col.G; a[2] = col.B;
+                    a[0] = ar; a[1] = ag; a[2] = ab;
                     int n = Math.Min(13, list.Count - i);
                     for (int j = 0; j < n; j++) a[3 + j] = list[i + j].Zone;
-                    dev.Send(_perKey, 6, a);
+                    SendPacket(dev, 6, a);
+                    packets++;
                 }
             }
             else
@@ -248,35 +259,49 @@ public sealed class G815Keyboard : IDisposable
                 a[j * 4 + 2] = col.G;
                 a[j * 4 + 3] = col.B;
             }
-            dev.Send(_perKey, 1, a);
+            SendPacket(dev, 1, a);
+            packets++;
         }
 
-        Commit(dev);
+        SendPacket(dev, 7, Array.Empty<byte>());
+        LastPacketCount = packets + 1;
     }
 
-    // Ako tipkovnica ne odgovara na "commit", čekanje od pola sekunde po okviru
-    // srušilo bi animacije na ~2 FPS. Nakon nekoliko izostalih odgovora šaljemo bez čekanja.
-    private bool _commitNoWait;
-    private int _commitTimeouts;
+    // Način rada: čekaj potvrdu svakog paketa (zadano). Ako tipkovnica uopće ne potvrđuje,
+    // prelazi se na slanje bez čekanja s malim razmakom između paketa.
+    private bool _noAck;
+    private int _ackTimeouts;
 
-    private void Commit(HidppDevice dev)
+    private void SendPacket(HidppDevice dev, byte function, byte[] args)
     {
-        if (_commitNoWait)
+        if (_noAck)
         {
-            dev.Send(_perKey, 7, Array.Empty<byte>());
+            dev.Send(_perKey, function, args);
+            Thread.Sleep(1);
             return;
         }
-        try
+        for (int attempt = 0; ; attempt++)
         {
-            dev.Request(_perKey, 7, Array.Empty<byte>(), 120);
-            _commitTimeouts = 0;
-        }
-        catch (TimeoutException)
-        {
-            if (++_commitTimeouts >= 3)
+            try
             {
-                _commitNoWait = true;
-                Log.Write("Commit ne dobiva odgovor – prelazim na slanje bez čekanja.");
+                dev.Request(_perKey, function, args, 80);
+                _ackTimeouts = 0;
+                return;
+            }
+            catch (HidppException ex) when (ex.ErrorCode == 0x08 && attempt < 10)
+            {
+                // zauzeto: kratko pričekaj pa ponovi isti paket
+                BusyRetries++;
+                Thread.Sleep(2 + attempt);
+            }
+            catch (TimeoutException)
+            {
+                if (++_ackTimeouts >= 5)
+                {
+                    _noAck = true;
+                    Log.Write("Tipkovnica ne potvrđuje pakete boja – prelazim na slanje bez čekanja.");
+                }
+                return;
             }
         }
     }

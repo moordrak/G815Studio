@@ -761,7 +761,7 @@ public sealed class MainForm : Form
         _stInfo.Text = eng.LastError is { } err
             ? "Osvjetljenje: " + err
             : kb.IsConnected && eng.MeasuredFps > 0
-                ? $"Osvjetljenje: {eng.MeasuredFps:0} FPS · slanje {eng.SendMs:0.0} ms/okvir"
+                ? $"Osvjetljenje: {eng.MeasuredFps:0} FPS · {eng.PacketsPerFrame:0} paketa · {eng.SendMs:0.0} ms/okvir · zauzeto: {kb.BusyRetries}×"
                 : "";
 
         _devInfo.Text = kb.IsConnected
