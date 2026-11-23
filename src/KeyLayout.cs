@@ -12,7 +12,7 @@ public sealed class KeyDef
     public float W { get; init; } = 1;
     public float H { get; init; } = 1;
     public string Group { get; init; }
-    public string Shape { get; init; }   // null = pravokutnik, "isoEnter" = Enter sa zubom ulijevo
+    public string Shape { get; init; }   // null = pravokutnik, "isoEnter" = Enter sa zubom ulijevo, "round" = okrugla tipka, "logo"
 
     public float CenterX => X + W / 2;
     public float CenterY => Y + H / 2;
@@ -156,6 +156,20 @@ public static class KeyLayouts
         K("→", 0x4F, 17.25f, r5, group: "arrows");
         K("0", 0x62, 18.5f, r5, 2, group: "numpad");
         K(iso ? "," : ".", 0x63, 20.5f, r5, group: "numpad");
+
+        // Okrugle tipke s RGB osvjetljenjem: tipka za igre, svjetlina i medijske tipke.
+        // Zone nisu javno dokumentirane – ovo su najvjerojatnije vrijednosti, a mogu se ispraviti
+        // u Postavkama (Ispitivač zona). M1–M3 i MR imaju samo bijele lampice (ne RGB).
+        void R(string id, string label, byte zone, float x, float y, string group) => keys.Add(new KeyDef
+        {
+            Id = id, Label = label, DefaultZone = zone, Zone = zone, X = ox + x, Y = y, W = 1, H = 1, Group = group, Shape = "round"
+        });
+        R("GAME", "Način za igre", 0x9A, 6.5f, 0.3f, "top");
+        R("BRIGHT", "Svjetlina", 0x99, 7.5f, 0.3f, "top");
+        R("MEDIA_PREV", "Prethodna", 0x9C, 18.5f, oy, "media");
+        R("MEDIA_PLAY", "Play/Pauza", 0x9E, 19.5f, oy, "media");
+        R("MEDIA_NEXT", "Sljedeća", 0x9B, 20.5f, oy, "media");
+        R("MEDIA_MUTE", "Utišaj", 0x9F, 21.5f, oy, "media");
 
         if (overrides != null)
         {

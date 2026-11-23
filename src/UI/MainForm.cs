@@ -49,6 +49,8 @@ public sealed class MainForm : Form
     private ComboBox _layoutCombo, _zoneKey;
     private NumericUpDown _fps, _zoneNum;
     private Label _devInfo;
+    private CheckBox _zoneAuto;
+    private readonly System.Windows.Forms.Timer _zoneTimer = new() { Interval = 1000 };
 
     private static readonly (EffectType Type, string Name, string Help)[] Effects =
     {
@@ -110,6 +112,8 @@ public sealed class MainForm : Form
     {
         _uiTimer.Stop();
         _uiTimer.Dispose();
+        _zoneTimer.Stop();
+        _zoneTimer.Dispose();
         _c.StateChanged -= OnStateChanged;
         _c.MacrosChanged -= OnMacrosChanged;
         _c.Recorder.StepsChanged -= OnRecorderSteps;
@@ -423,6 +427,7 @@ public sealed class MainForm : Form
         Q("Navigacija", k => k.Group == "nav");
         Q("Modifikatori", k => k.Group == "mods");
         Q("G tipke + logo", k => k.Group is "g" or "logo");
+        Q("Mediji i gornje tipke", k => k.Group is "media" or "top");
         quick.Controls.Add(Ui.Btn("Poništi odabir", (_, _) => _kbView.ClearSelection(), 200));
         controls.Controls.Add(Ui.Group("Brzi odabir (Ctrl = dodaj)", quick));
 
@@ -689,6 +694,26 @@ public sealed class MainForm : Form
             ReloadKeys();
         }));
         zones.Controls.Add(zr);
+
+        // pomoćnik: prolaz kroz zone koje još nisu pridružene nijednoj tipki
+        var zr2 = Ui.Flow();
+        zr2.Controls.Add(Ui.Btn("◀ Prethodna slobodna", (_, _) => StepZone(-1)));
+        zr2.Controls.Add(Ui.Btn("Sljedeća slobodna ▶", (_, _) => StepZone(1)));
+        _zoneAuto = new CheckBox { Text = "Automatski prolaz (1 s po zoni)", AutoSize = true, Margin = new Padding(12, 9, 10, 3) };
+        _zoneAuto.CheckedChanged += (_, _) =>
+        {
+            if (_zoneAuto.Checked) { _zoneTest.Checked = true; _zoneTimer.Start(); }
+            else _zoneTimer.Stop();
+        };
+        zr2.Controls.Add(_zoneAuto);
+        zones.Controls.Add(zr2);
+        zones.Controls.Add(new Label
+        {
+            AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
+            Text = "Za medijske tipke, tipku za svjetlinu i tipku za igre: odaberi tipku na popisu, uključi automatski prolaz " +
+                   "i kad ta tipka zasvijetli bijelo, isključi prolaz (po potrebi vrati se korak gumbom ◀) pa klikni \"Pridruži\"."
+        });
+        _zoneTimer.Tick += (_, _) => StepZone(1);
         flow.Controls.Add(Ui.Group("Ispitivač i ispravak zona", zones));
 
         page.Controls.Add(flow);
@@ -805,6 +830,21 @@ public sealed class MainForm : Form
 
         string fg = _c.ForegroundApp ?? "?";
         _effLabel.Text = $"Sada aktivan: {_c.EffectiveProfile?.Name}   (zadnja aplikacija u fokusu: {fg})";
+    }
+
+    /// <summary>Pomiče ispitivač na sljedeću zonu koju ne koristi nijedna druga tipka.</summary>
+    private void StepZone(int dir)
+    {
+        var selected = _zoneKey.SelectedItem as KeyDef;
+        var used = new HashSet<int>(_c.Keys.Where(k => k != selected).Select(k => (int)k.Zone));
+        int z = (int)_zoneNum.Value;
+        for (int i = 0; i < 256; i++)
+        {
+            z = (z + dir + 256) % 256;
+            if (z != 0 && !used.Contains(z)) break;
+        }
+        _zoneNum.Value = z;
+        if (!_zoneTest.Checked) _zoneTest.Checked = true;
     }
 
     private void UpdateSelInfo()

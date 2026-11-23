@@ -23,6 +23,7 @@ public sealed class KeyboardView : Control
     private Geo _geo;
     private Region _keyRegion;
     private readonly List<(RectangleF Rect, int Bank)> _mHits = new();
+    private readonly List<(RectangleF Rect, KeyDef Key)> _roundHits = new();
 
     public HashSet<string> Selected { get; } = new();
     public Func<KeyDef, Color> ColorOf { get; set; }
@@ -59,7 +60,7 @@ public sealed class KeyboardView : Control
     public void SelectWhere(Func<KeyDef, bool> predicate, bool add)
     {
         if (!add) Selected.Clear();
-        foreach (var k in _keys.Where(k => k.Shape != "logo").Where(predicate)) Selected.Add(k.Id);
+        foreach (var k in _keys.Where(predicate)) Selected.Add(k.Id);
         Invalidate();
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -98,7 +99,7 @@ public sealed class KeyboardView : Control
 
     // ------------------------------------------------------------------ geometrija
 
-    private IEnumerable<KeyDef> RealKeys => _keys.Where(k => k.Shape != "logo");
+    private IEnumerable<KeyDef> RealKeys => _keys.Where(k => k.Shape != "logo" && k.Shape != "round");
 
     private Geo ComputeGeo()
     {
@@ -130,6 +131,8 @@ public sealed class KeyboardView : Control
         if (g == null) return null;
         var logo = Find("LOGO");
         if (logo != null && LogoRect(g).Contains(p)) return logo;
+        foreach (var (rect, key) in _roundHits)
+            if (rect.Contains(p)) return key;
         return RealKeys.LastOrDefault(k => g.Rect(k).Contains(p));
     }
 
@@ -354,22 +357,22 @@ public sealed class KeyboardView : Control
                 gr.DrawLine(line, cyl.Left + f, y, cyl.Right - f, y);
     }
 
-    private IEnumerable<(PointF Center, RoundKind Kind, string Text, int Bank)> RoundKeys(Geo g)
+    private IEnumerable<(PointF Center, RoundKind Kind, string Text, int Bank, KeyDef Key)> RoundKeys(Geo g)
     {
         float f = g.F;
         float topY = g.By + 38 * f;
-        var list = new List<(PointF, RoundKind, string, int)>();
-        void Add(string id, RoundKind kind, string text, int bank, float y)
+        var list = new List<(PointF, RoundKind, string, int, KeyDef)>();
+        void Add(string id, RoundKind kind, string text, int bank, float y, string rgbId = null)
         {
             float x = CenterX(g, id);
-            if (!float.IsNaN(x)) list.Add((new PointF(x, y), kind, text, bank));
+            if (!float.IsNaN(x)) list.Add((new PointF(x, y), kind, text, bank, rgbId == null ? null : Find(rgbId)));
         }
         Add("U3A", RoundKind.Text, "M1", 1, topY);
         Add("U3B", RoundKind.Text, "M2", 2, topY);
         Add("U3C", RoundKind.Text, "M3", 3, topY);
         Add("U3D", RoundKind.Text, "MR", 0, topY);
-        Add("U3E", RoundKind.Game, null, -1, topY);
-        Add("U3F", RoundKind.Light, null, -1, topY);
+        Add("U3E", RoundKind.Game, null, -1, topY, "GAME");
+        Add("U3F", RoundKind.Light, null, -1, topY, "BRIGHT");
 
         var pause = Find("U48");
         float mediaY = topY;
@@ -378,10 +381,10 @@ public sealed class KeyboardView : Control
             var pr = g.Rect(pause);
             mediaY = pr.Y + (pr.Height - 7 * f) / 2;
         }
-        Add("U53", RoundKind.Prev, null, -1, mediaY);
-        Add("U54", RoundKind.Play, null, -1, mediaY);
-        Add("U55", RoundKind.Next, null, -1, mediaY);
-        Add("U56", RoundKind.Mute, null, -1, mediaY);
+        Add("U53", RoundKind.Prev, null, -1, mediaY, "MEDIA_PREV");
+        Add("U54", RoundKind.Play, null, -1, mediaY, "MEDIA_PLAY");
+        Add("U55", RoundKind.Next, null, -1, mediaY, "MEDIA_NEXT");
+        Add("U56", RoundKind.Mute, null, -1, mediaY, "MEDIA_MUTE");
         return list;
     }
 
@@ -612,6 +615,7 @@ public sealed class KeyboardView : Control
 
         // 3) okrugle tipke: natpisi / ikone
         _mHits.Clear();
+        _roundHits.Clear();
         using var mFont = new Font("Segoe UI", Math.Max(6f, 10f * f), FontStyle.Bold, GraphicsUnit.Pixel);
         foreach (var rk in RoundKeys(g))
         {
@@ -626,8 +630,31 @@ public sealed class KeyboardView : Control
             }
             else
             {
+                // RGB okrugla tipka: ikona svijetli bojom tipke, oko tipke sjaj
+                var kc = rk.Key != null ? (ColorOf?.Invoke(rk.Key) ?? Color.Black) : Color.FromArgb(217, 220, 226);
+                bool lit = !IsDark(kc);
+                if (lit && rk.Key != null)
+                {
+                    for (int i = 3; i >= 1; i--)
+                    {
+                        var gl = RectangleF.Inflate(rect, i * 3f * f, i * 3f * f);
+                        gl.Offset(i * 1.2f * f, i * 1.6f * f);
+                        using var gb = new SolidBrush(Color.FromArgb(30 - i * 7, kc));
+                        using var ring = new System.Drawing.Drawing2D.GraphicsPath();
+                        ring.AddEllipse(gl);
+                        ring.AddEllipse(rect);
+                        ring.FillMode = FillMode.Alternate;
+                        gr.FillPath(gb, ring);
+                    }
+                }
                 float isz = (rk.Kind == RoundKind.Light ? 17 : rk.Kind == RoundKind.Game ? 16 : rk.Kind == RoundKind.Mute ? 16 : 15) * f;
-                DrawRoundIcon(gr, rk.Kind, new RectangleF(rk.Center.X - isz / 2, rk.Center.Y - isz / 2, isz, isz), Color.FromArgb(217, 220, 226));
+                DrawRoundIcon(gr, rk.Kind, new RectangleF(rk.Center.X - isz / 2, rk.Center.Y - isz / 2, isz, isz), lit ? kc : Muted);
+                if (rk.Key != null)
+                {
+                    _roundHits.Add((rect, rk.Key));
+                    if (Selected.Contains(rk.Key.Id))
+                        gr.DrawEllipse(selPen, RectangleF.Inflate(rect, 1.5f * f, 1.5f * f));
+                }
             }
         }
 
