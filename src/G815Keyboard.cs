@@ -213,10 +213,12 @@ public sealed class G815Keyboard : IDisposable
         if (dev == null || _perKey == 0 || changes.Count == 0) return;
 
         var singles = new List<(byte Zone, Color Color)>();
-        foreach (var group in changes.GroupBy(c => c.Color.ToArgb() & 0xFFFFFF))
+        // Boje koje se razlikuju za manje od 8 po kanalu idu u isti paket (do 13 tipki),
+        // umjesto po 4 tipke u paketu. Razlika je na LED-icama nevidljiva, a paketa je puno manje.
+        foreach (var group in changes.GroupBy(c => ((c.Color.R >> 3) << 10) | ((c.Color.G >> 3) << 5) | (c.Color.B >> 3)))
         {
             var list = group.ToList();
-            if (list.Count > 4)
+            if (list.Count >= 4)
             {
                 for (int i = 0; i < list.Count; i += 13)
                 {
@@ -249,7 +251,34 @@ public sealed class G815Keyboard : IDisposable
             dev.Send(_perKey, 1, a);
         }
 
-        dev.Request(_perKey, 7, Array.Empty<byte>(), 500);
+        Commit(dev);
+    }
+
+    // Ako tipkovnica ne odgovara na "commit", čekanje od pola sekunde po okviru
+    // srušilo bi animacije na ~2 FPS. Nakon nekoliko izostalih odgovora šaljemo bez čekanja.
+    private bool _commitNoWait;
+    private int _commitTimeouts;
+
+    private void Commit(HidppDevice dev)
+    {
+        if (_commitNoWait)
+        {
+            dev.Send(_perKey, 7, Array.Empty<byte>());
+            return;
+        }
+        try
+        {
+            dev.Request(_perKey, 7, Array.Empty<byte>(), 120);
+            _commitTimeouts = 0;
+        }
+        catch (TimeoutException)
+        {
+            if (++_commitTimeouts >= 3)
+            {
+                _commitNoWait = true;
+                Log.Write("Commit ne dobiva odgovor – prelazim na slanje bez čekanja.");
+            }
+        }
     }
 
     private static byte[] Filled16()

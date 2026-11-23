@@ -586,7 +586,12 @@ public sealed class MainForm : Form
         _stDevice.ForeColor = kb.IsConnected ? Color.ForestGreen : Color.Firebrick;
         _stProfile.Text = "Aktivni profil: " + _c.EffectiveProfile?.Name;
         _stBank.Text = "Banka: M" + _c.Bank + (_c.HardwareRecording ? "  ● SNIMANJE (MR)" : "");
-        _stInfo.Text = _c.Engine.LastError is { } err ? "Osvjetljenje: " + err : "";
+        var eng = _c.Engine;
+        _stInfo.Text = eng.LastError is { } err
+            ? "Osvjetljenje: " + err
+            : kb.IsConnected && eng.MeasuredFps > 0
+                ? $"Osvjetljenje: {eng.MeasuredFps:0} FPS · slanje {eng.SendMs:0.0} ms/okvir"
+                : "";
 
         _devInfo.Text = kb.IsConnected
             ? $"Spojeno: {kb.DeviceName}\nHID++ značajke: {kb.FeatureSummary}\nG tipke preusmjerene: {(kb.HasGKeys ? "da" : "ne")}"

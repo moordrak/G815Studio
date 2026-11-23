@@ -28,6 +28,7 @@ public sealed class EffectRenderer : IDisposable
     private AudioMeter _audio;
     private ScreenSampler _screen;
     private float _lvlL, _lvlR;
+    private double _lastAudioT;
     private int _frameNo;
 
     public void AddPress(LightKey k, double t)
@@ -138,7 +139,11 @@ public sealed class EffectRenderer : IDisposable
                 _audio ??= new AudioMeter();
                 float l = 0, r = 0;
                 if (_audio.TryGetPeaks(out float pl, out float pr)) { l = pl; r = pr; }
-                double decay = 0.80 + 0.15 * (1 - speed / 2);
+                // pad razine ovisi o stvarnom vremenu, ne o broju okvira
+                double dt = Math.Clamp(t - _lastAudioT, 0, 0.5);
+                _lastAudioT = t;
+                double tau = Math.Clamp(0.3 / speed, 0.05, 1.5);
+                double decay = Math.Exp(-dt / tau);
                 _lvlL = (float)Math.Max(l, _lvlL * decay);
                 _lvlR = (float)Math.Max(r, _lvlR * decay);
                 foreach (var key in keys)
@@ -200,6 +205,16 @@ public sealed class LightingEngine : IDisposable
     public volatile int TestZone = -1;
     public string LastError { get; private set; }
 
+    /// <summary>Stvarni broj okvira u sekundi poslanih tipkovnici i prosječno trajanje slanja jednog okvira.</summary>
+    public double MeasuredFps { get; private set; }
+    public double SendMs { get; private set; }
+    private int _framesThisSecond;
+    private double _sendMsAccum;
+    private long _fpsWindowStart;
+
+    [System.Runtime.InteropServices.DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint ms);
+    [System.Runtime.InteropServices.DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint ms);
+
     public LightingEngine(G815Keyboard kb)
     {
         _kb = kb;
@@ -225,6 +240,7 @@ public sealed class LightingEngine : IDisposable
             _cfg = cfg ?? new LightingConfig();
             RebuildBase();
         }
+        ForceResend();
     }
 
     public void SetKeys(IEnumerable<KeyDef> defs)
@@ -274,6 +290,14 @@ public sealed class LightingEngine : IDisposable
 
     private void Loop()
     {
+        // Bez ovoga Windows "spava" u koracima od ~15,6 ms pa animacije trzaju.
+        try { timeBeginPeriod(1); } catch { }
+        try { LoopCore(); }
+        finally { try { timeEndPeriod(1); } catch { } }
+    }
+
+    private void LoopCore()
+    {
         while (!_stop)
         {
             long start = _clock.ElapsedMilliseconds;
@@ -309,10 +333,11 @@ public sealed class LightingEngine : IDisposable
             lock (_snapshot) Array.Copy(_frame, _snapshot, 256);
 
             if (_kb.IsConnected) Send(keys);
+            UpdateStats();
 
             int fps = Math.Clamp(Fps, 5, 60);
             int wait = 1000 / fps - (int)(_clock.ElapsedMilliseconds - start);
-            Thread.Sleep(Math.Max(2, wait));
+            Thread.Sleep(Math.Max(1, wait));
         }
     }
 
@@ -327,15 +352,18 @@ public sealed class LightingEngine : IDisposable
             {
                 if (!_everUsed[z]) continue;
                 var c = _frame[z];
-                if (_sentValid[z] && ColorUtil.Rgb(_sent[z]) == ColorUtil.Rgb(c)) continue;
+                if (_sentValid[z] && !Differs(_sent[z], c)) continue;
                 changes.Add(((byte)z, Color.FromArgb(255, c.R, c.G, c.B)));
             }
         }
         if (changes.Count == 0) return;
 
+        long t0 = _clock.ElapsedTicks;
         try
         {
             _kb.SendColors(changes);
+            _framesThisSecond++;
+            _sendMsAccum += (_clock.ElapsedTicks - t0) * 1000.0 / Stopwatch.Frequency;
             lock (_sentValid)
             {
                 foreach (var (z, c) in changes)
@@ -352,6 +380,30 @@ public sealed class LightingEngine : IDisposable
             ForceResend();
             Thread.Sleep(200);
         }
+    }
+
+    /// <summary>
+    /// Sitne promjene (koje oko ne vidi) se ne šalju, što kod glatkih efekata
+    /// drastično smanjuje broj USB paketa. Gašenje tipke se uvijek šalje.
+    /// </summary>
+    private static bool Differs(Color sent, Color now)
+    {
+        int d = Math.Abs(sent.R - now.R) + Math.Abs(sent.G - now.G) + Math.Abs(sent.B - now.B);
+        if (d == 0) return false;
+        if (now.R == 0 && now.G == 0 && now.B == 0) return true;
+        return d > 6;
+    }
+
+    private void UpdateStats()
+    {
+        long now = _clock.ElapsedMilliseconds;
+        long span = now - _fpsWindowStart;
+        if (span < 1000) return;
+        MeasuredFps = _framesThisSecond * 1000.0 / span;
+        SendMs = _framesThisSecond > 0 ? _sendMsAccum / _framesThisSecond : 0;
+        _framesThisSecond = 0;
+        _sendMsAccum = 0;
+        _fpsWindowStart = now;
     }
 
     public void Dispose()
