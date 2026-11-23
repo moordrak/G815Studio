@@ -50,6 +50,8 @@ public sealed class HidppDevice : IDisposable
     /// <summary>featureIndex, funkcija, parametri</summary>
     public event Action<byte, byte, byte[]> Notification;
     public event Action Disconnected;
+    /// <summary>Greška na paket poslan bez čekanja: featureIdx, fn|swId, kod greške.</summary>
+    public event Action<byte, byte, byte> ErrorReceived;
 
     public HidppDevice(HidStream stream)
     {
@@ -121,6 +123,13 @@ public sealed class HidppDevice : IDisposable
         {
             _pending = null;
             pending.TrySetResult(parameters);
+            return;
+        }
+
+        // greška na paket poslan bez čekanja (npr. 0x08 zauzeto)
+        if (feature == 0xFF && r.Length >= 6)
+        {
+            ErrorReceived?.Invoke(r[3], r[4], r[5]);
             return;
         }
 

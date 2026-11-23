@@ -68,6 +68,7 @@ public sealed class G815Keyboard : IDisposable
                     var stream = HidStream.Open(c);
                     dev = new HidppDevice(stream);
                     dev.Notification += OnNotification;
+                    dev.ErrorReceived += OnDeviceError;
                     dev.Start();
 
                     byte perKey = dev.GetFeatureIndex(FeatPerKeyLighting);
@@ -216,28 +217,23 @@ public sealed class G815Keyboard : IDisposable
     {
         var dev = _dev;
         if (dev == null || _perKey == 0 || changes.Count == 0) return;
-        var packets = new List<(byte Function, byte[] Args)>();
 
-        // Kad se mijenja puno tipki (animacije), slične boje se jače grupiraju:
-        // manje paketa = više FPS-a, a razlika od nekoliko nijansi na LED-icama se ne vidi.
-        int shift = changes.Count > 80 ? 5 : changes.Count > 40 ? 4 : 3;
+        // Isto kao OpenRGB: promijenjene tipke grupiraju se po boji. Grupa od 4+ tipke ide
+        // "velikim" paketom (funkcija 6: boja + do 13 tipki), ostale "malim" (funkcija 1: 4× tipka+boja).
+        // Neiskorišteni bajtovi su 0. Paketi se šalju redom BEZ čekanja potvrde (G815 potvrđuje
+        // samo greške), a na kraju ide commit (funkcija 7).
+        var packets = new List<(byte Function, byte[] Args)>();
         var singles = new List<(byte Zone, Color Color)>();
-        foreach (var group in changes.GroupBy(c => ((c.Color.R >> shift) << 16) | ((c.Color.G >> shift) << 8) | (c.Color.B >> shift)))
+        foreach (var group in changes.GroupBy(c => ColorUtil.Rgb(c.Color)))
         {
             var list = group.ToList();
-            bool black = list.All(c => c.Color.R == 0 && c.Color.G == 0 && c.Color.B == 0);
-            // Crna (gašenje) uvijek ide paketima za pojedinačne tipke: skupni paket (funkcija 6)
-            // s bojom 0,0,0 tipkovnica ne primjenjuje pouzdano, pa bi tipke ostale upaljene.
-            if (list.Count >= 4 && !black)
+            if (list.Count >= 4)
             {
-                int r = 0, g = 0, b = 0;
-                foreach (var (_, c) in list) { r += c.R; g += c.G; b += c.B; }
-                byte ar = (byte)(r / list.Count), ag = (byte)(g / list.Count), ab = (byte)(b / list.Count);
-                if (ar == 0 && ag == 0 && ab == 0) { singles.AddRange(list); continue; }
+                var col = list[0].Color;
                 for (int i = 0; i < list.Count; i += 13)
                 {
-                    var a = Filled16();
-                    a[0] = ar; a[1] = ag; a[2] = ab;
+                    var a = new byte[16];
+                    a[0] = col.R; a[1] = col.G; a[2] = col.B;
                     int n = Math.Min(13, list.Count - i);
                     for (int j = 0; j < n; j++) a[3 + j] = list[i + j].Zone;
                     packets.Add((6, a));
@@ -248,10 +244,9 @@ public sealed class G815Keyboard : IDisposable
                 singles.AddRange(list);
             }
         }
-
         for (int i = 0; i < singles.Count; i += 4)
         {
-            var a = Filled16();
+            var a = new byte[16];
             int n = Math.Min(4, singles.Count - i);
             for (int j = 0; j < n; j++)
             {
@@ -264,71 +259,50 @@ public sealed class G815Keyboard : IDisposable
             packets.Add((1, a));
         }
 
-        if (_noAck)
+        Interlocked.Exchange(ref _busyInFrame, 0);
+        bool pace = DateTime.UtcNow < _paceUntil;
+        foreach (var (fn, args) in packets)
         {
-            foreach (var (fn, args) in packets) { dev.Send(_perKey, fn, args); Thread.Sleep(1); }
+            dev.Send(_perKey, fn, args);      // WriteFile čeka dok paket ne ode na USB
+            if (pace) Thread.Sleep(1);
         }
-        else
+
+        // commit: kratko pričekaj potvrdu, ali izostanak potvrde nije greška
+        for (int attempt = 0; attempt < 3; attempt++)
         {
             try
             {
-                BusyRetries += dev.SendBatch(_perKey, packets, Window, 100);
-                _ackTimeouts = 0;
+                dev.Request(_perKey, 7, Array.Empty<byte>(), 30);
+                break;
             }
             catch (TimeoutException)
             {
-                if (++_ackTimeouts >= 5)
-                {
-                    _noAck = true;
-                    Log.Write("Tipkovnica ne potvrđuje pakete boja – prelazim na slanje bez čekanja.");
-                }
+                break;
+            }
+            catch (HidppException ex) when (ex.ErrorCode == 0x08)
+            {
+                Thread.Sleep(2);
             }
         }
-
-        SendPacket(dev, 7, Array.Empty<byte>());
         LastPacketCount = packets.Count + 1;
+
+        if (Volatile.Read(ref _busyInFrame) > 0)
+        {
+            // tipkovnica nije stigla obraditi neke pakete: iduće 2 s šalji s malim razmakom,
+            // a promjene iz ovog okvira ponovi u idućem (ne označavaju se kao poslane)
+            BusyRetries += _busyInFrame;
+            _paceUntil = DateTime.UtcNow.AddSeconds(2);
+            throw new HidppException(0x08);
+        }
     }
 
-    /// <summary>Broj paketa boja "u letu" (bez čekanja potvrde). 4 je dobar omjer brzine i pouzdanosti.</summary>
-    public int Window { get; set; } = 4;
+    private int _busyInFrame;
+    private DateTime _paceUntil;
 
-    // Način rada: čekaj potvrdu svakog paketa (zadano). Ako tipkovnica uopće ne potvrđuje,
-    // prelazi se na slanje bez čekanja s malim razmakom između paketa.
-    private bool _noAck;
-    private int _ackTimeouts;
-
-    private void SendPacket(HidppDevice dev, byte function, byte[] args)
+    private void OnDeviceError(byte feature, byte fnSw, byte code)
     {
-        if (_noAck)
-        {
-            dev.Send(_perKey, function, args);
-            Thread.Sleep(1);
-            return;
-        }
-        for (int attempt = 0; ; attempt++)
-        {
-            try
-            {
-                dev.Request(_perKey, function, args, 80);
-                _ackTimeouts = 0;
-                return;
-            }
-            catch (HidppException ex) when (ex.ErrorCode == 0x08 && attempt < 10)
-            {
-                // zauzeto: kratko pričekaj pa ponovi isti paket
-                BusyRetries++;
-                Thread.Sleep(2 + attempt);
-            }
-            catch (TimeoutException)
-            {
-                if (++_ackTimeouts >= 5)
-                {
-                    _noAck = true;
-                    Log.Write("Tipkovnica ne potvrđuje pakete boja – prelazim na slanje bez čekanja.");
-                }
-                return;
-            }
-        }
+        if (feature == _perKey && code == 0x08) Interlocked.Increment(ref _busyInFrame);
+        else Log.Write($"HID++ greška 0x{code:X2} (značajka 0x{feature:X2}, funkcija 0x{fnSw:X2})");
     }
 
     private static byte[] Filled16()
