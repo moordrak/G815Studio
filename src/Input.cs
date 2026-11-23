@@ -165,6 +165,12 @@ public sealed class MacroPlayer
     private readonly object _lock = new();
 
     public event Action<string> Error;
+    public event Action<string> Info;
+
+    /// <summary>Izvršava funkciju na UI niti i vraća rezultat (postavlja AppController).</summary>
+    public Func<Func<string>, string> Ui { get; set; }
+
+    private static readonly System.Net.Http.HttpClient Http = new() { Timeout = Timeout.InfiniteTimeSpan };
 
     public bool IsRunning(int slot)
     {
@@ -222,6 +228,7 @@ public sealed class MacroPlayer
     {
         var ct = cts.Token;
         var held = new List<MacroStep>();
+        var vars = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             do
@@ -230,7 +237,7 @@ public sealed class MacroPlayer
                 foreach (var s in steps)
                 {
                     if (ct.IsCancellationRequested) return;
-                    Execute(s, held, ct);
+                    Execute(s, held, vars, ct);
                 }
                 // zaštita od beskonačne petlje bez kašnjenja
                 if (loop && sw.ElapsedMilliseconds < 15 && ct.WaitHandle.WaitOne(15)) return;
@@ -254,7 +261,7 @@ public sealed class MacroPlayer
         }
     }
 
-    private static void Execute(MacroStep s, List<MacroStep> held, CancellationToken ct)
+    private void Execute(MacroStep s, List<MacroStep> held, Dictionary<string, string> vars, CancellationToken ct)
     {
         switch (s.Type)
         {
@@ -275,12 +282,98 @@ public sealed class MacroPlayer
                 if (s.DelayMs > 0 && ct.WaitHandle.WaitOne(s.DelayMs)) throw new OperationCanceledException();
                 break;
             case StepType.Text:
-                NativeInput.Text(s.Text);
+                NativeInput.Text(Substitute(s.Text, vars));
                 break;
             case StepType.Run:
                 if (!string.IsNullOrWhiteSpace(s.Path))
-                    Process.Start(new ProcessStartInfo(s.Path, s.Args ?? "") { UseShellExecute = true });
+                    Process.Start(new ProcessStartInfo(Substitute(s.Path, vars), Substitute(s.Args ?? "", vars)) { UseShellExecute = true });
                 break;
+            case StepType.Input:
+            {
+                string name = string.IsNullOrWhiteSpace(s.Variable) ? "vrijednost" : s.Variable.Trim();
+                string def = Substitute(s.DefaultValue ?? "", vars);
+                string prompt = string.IsNullOrWhiteSpace(s.Prompt) ? $"Unesi vrijednost za {{{name}}}:" : Substitute(s.Prompt, vars);
+                string value = Ui?.Invoke(() => PromptDialog.ShowTop("G815 Studio – makro", prompt, def));
+                if (value == null) throw new OperationCanceledException(); // korisnik je odustao → prekini makro
+                vars[name] = value;
+                break;
+            }
+            case StepType.Http:
+                DoHttp(s, vars, ct);
+                break;
+        }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex VarRx =
+        new(@"\{([\p{L}\p{N}_]+)(:url)?\}", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Zamjenjuje {naziv} vrijednostima: varijable iz koraka "Unos vrijednosti", {odgovor} (tijelo zadnjeg HTTP odgovora),
+    /// {status}, {datum}, {vrijeme}, {clipboard}. Dodatak ":url" kodira vrijednost za URL, npr. {grad:url}.
+    /// </summary>
+    private string Substitute(string text, Dictionary<string, string> vars)
+    {
+        if (string.IsNullOrEmpty(text) || text.IndexOf('{') < 0) return text;
+        return VarRx.Replace(text, m =>
+        {
+            string name = m.Groups[1].Value;
+            string value;
+            if (vars.TryGetValue(name, out var v)) value = v;
+            else if (name.Equals("datum", StringComparison.OrdinalIgnoreCase)) value = DateTime.Now.ToString("dd.MM.yyyy");
+            else if (name.Equals("vrijeme", StringComparison.OrdinalIgnoreCase)) value = DateTime.Now.ToString("HH:mm:ss");
+            else if (name.Equals("clipboard", StringComparison.OrdinalIgnoreCase))
+                value = Ui?.Invoke(() => Clipboard.ContainsText() ? Clipboard.GetText() : "") ?? "";
+            else return m.Value;
+            return m.Groups[2].Success ? Uri.EscapeDataString(value ?? "") : value;
+        });
+    }
+
+    private void DoHttp(MacroStep s, Dictionary<string, string> vars, CancellationToken ct)
+    {
+        string url = Substitute(s.Url ?? "", vars).Trim();
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
+            throw new InvalidOperationException("Neispravan URL: " + url);
+
+        var req = new System.Net.Http.HttpRequestMessage(new System.Net.Http.HttpMethod((s.Method ?? "GET").ToUpperInvariant()), uri);
+        string body = Substitute(s.Body ?? "", vars);
+        string method = req.Method.Method;
+        if (body.Length > 0 && method != "GET" && method != "HEAD")
+        {
+            req.Content = new System.Net.Http.StringContent(body, System.Text.Encoding.UTF8);
+            req.Content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(
+                string.IsNullOrWhiteSpace(s.ContentType) ? "application/json" : s.ContentType.Trim());
+        }
+        foreach (var raw in (Substitute(s.Headers ?? "", vars)).Split('\n'))
+        {
+            string line = raw.Trim();
+            int colon = line.IndexOf(':');
+            if (colon <= 0) continue;
+            string hn = line[..colon].Trim(), hv = line[(colon + 1)..].Trim();
+            if (!req.Headers.TryAddWithoutValidation(hn, hv)) req.Content?.Headers.TryAddWithoutValidation(hn, hv);
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(Math.Clamp(s.TimeoutMs, 1000, 120000));
+        try
+        {
+            using var resp = Http.SendAsync(req, timeout.Token).GetAwaiter().GetResult();
+            string text = resp.Content.ReadAsStringAsync(timeout.Token).GetAwaiter().GetResult();
+            vars["odgovor"] = text;
+            vars["status"] = ((int)resp.StatusCode).ToString();
+            Log.Write($"HTTP {method} {uri} → {(int)resp.StatusCode}");
+            if (s.ShowResult)
+            {
+                string preview = text.Length > 120 ? text[..120] + "…" : text;
+                Info?.Invoke($"{method} {uri.Host}: {(int)resp.StatusCode} {resp.ReasonPhrase}" + (preview.Length > 0 ? "\n" + preview : ""));
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"HTTP poziv nije odgovorio na vrijeme ({uri.Host}).");
+        }
+        finally
+        {
+            req.Dispose();
         }
     }
 }

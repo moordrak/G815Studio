@@ -18,7 +18,7 @@ public sealed class LightingConfig
     public Dictionary<string, string> KeyColors = new();  // KeyDef.Id -> #RRGGBB
 }
 
-public enum StepType { KeyPress, KeyDown, KeyUp, Delay, Text, Run }
+public enum StepType { KeyPress, KeyDown, KeyUp, Delay, Text, Run, Http, Input }
 
 public sealed class MacroStep
 {
@@ -30,6 +30,20 @@ public sealed class MacroStep
     public string Text;
     public string Path;
     public string Args;
+
+    // HTTP poziv
+    public string Method = "GET";
+    public string Url;
+    public string ContentType;
+    public string Headers;        // jedan po retku: "Naziv: vrijednost"
+    public string Body;
+    public int TimeoutMs = 10000;
+    public bool ShowResult = true;
+
+    // unos vrijednosti
+    public string Variable;       // naziv varijable, koristi se kao {naziv}
+    public string Prompt;
+    public string DefaultValue;
 
     public static string KeyName(int vk) => vk switch
     {
@@ -46,6 +60,8 @@ public sealed class MacroStep
         StepType.Delay => $"⏱ Čekaj  {DelayMs} ms",
         StepType.Text => $"✎ Upiši  \"{(Text ?? "").Replace("\r", "").Replace("\n", "⏎")}\"",
         StepType.Run => $"▶ Pokreni  {System.IO.Path.GetFileName(Path ?? "")} {Args}",
+        StepType.Http => $"⇄ HTTP {Method ?? "GET"}  {Url}",
+        StepType.Input => $"? Unos  {{{Variable}}}  \"{Prompt}\"",
         _ => Type.ToString()
     };
 }

@@ -93,6 +93,19 @@ internal sealed class PromptDialog : DarkDialog
         CancelButton = cancel;
     }
 
+    /// <summary>Za korak "Unos vrijednosti": prozor iznad svega, i kad je u fokusu igra ili drugi program.</summary>
+    public static string ShowTop(string title, string prompt, string value)
+    {
+        using var d = new PromptDialog(title, prompt, value, false)
+        {
+            TopMost = true,
+            ShowInTaskbar = true,
+            StartPosition = FormStartPosition.CenterScreen
+        };
+        d.Shown += (_, _) => { d.Activate(); d._box.Focus(); d._box.SelectAll(); };
+        return d.ShowDialog() == DialogResult.OK ? d._box.Text : null;
+    }
+
     public static string Show(IWin32Window owner, string title, string prompt, string value = "", bool multiline = false)
     {
         using var d = new PromptDialog(title, prompt, value, multiline);
@@ -204,5 +217,141 @@ internal sealed class ProcessPickerDialog : DarkDialog
         if (DialogResult == DialogResult.OK && _list.SelectedItem is string s)
             SelectedExe = s.Split("   —   ")[0].Trim().ToLowerInvariant();
         base.OnFormClosing(e);
+    }
+}
+
+/// <summary>Uređivanje koraka "HTTP poziv".</summary>
+internal sealed class HttpStepDialog : DarkDialog
+{
+    private readonly ComboBox _method, _type;
+    private readonly TextBox _url, _headers, _body;
+    private readonly NumericUpDown _timeout;
+    private readonly CheckBox _show;
+
+    public HttpStepDialog(MacroStep step)
+    {
+        Text = "HTTP poziv";
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        StartPosition = FormStartPosition.CenterParent;
+        MinimizeBox = MaximizeBox = false;
+        ShowInTaskbar = false;
+        ClientSize = new Size(620, 560);
+        Font = Theme.UiFont();
+
+        var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(14) };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        Label L(string text) => new() { Text = text, AutoSize = true, Margin = new Padding(3, 9, 3, 3) };
+
+        _method = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
+        _method.Items.AddRange(new object[] { "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD" });
+        _method.SelectedItem = (step.Method ?? "GET").ToUpperInvariant();
+        if (_method.SelectedIndex < 0) _method.SelectedIndex = 0;
+        _url = new TextBox { Dock = DockStyle.Fill, Text = step.Url ?? "https://" };
+        _type = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Dock = DockStyle.Fill, Text = string.IsNullOrWhiteSpace(step.ContentType) ? "application/json" : step.ContentType };
+        _type.Items.AddRange(new object[] { "application/json", "application/x-www-form-urlencoded", "text/plain", "application/xml" });
+        _headers = new TextBox { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 80, Text = (step.Headers ?? "").Replace("\r\n", "\n").Replace("\n", "\r\n") };
+        _body = new TextBox { Dock = DockStyle.Fill, Multiline = true, AcceptsReturn = true, AcceptsTab = true, ScrollBars = ScrollBars.Vertical, Height = 150, Font = new Font("Consolas", 10f), Text = (step.Body ?? "").Replace("\r\n", "\n").Replace("\n", "\r\n") };
+        _timeout = new NumericUpDown { Minimum = 1, Maximum = 120, Value = Math.Clamp(step.TimeoutMs / 1000, 1, 120), Width = 80 };
+        _show = new CheckBox { Text = "Prikaži rezultat u obavijesti", AutoSize = true, Checked = step.ShowResult };
+
+        t.Controls.Add(L("Metoda"), 0, 0); t.Controls.Add(_method, 1, 0);
+        t.Controls.Add(L("URL"), 0, 1); t.Controls.Add(_url, 1, 1);
+        t.Controls.Add(L("Content-Type"), 0, 2); t.Controls.Add(_type, 1, 2);
+        t.Controls.Add(L("Zaglavlja"), 0, 3); t.Controls.Add(_headers, 1, 3);
+        t.Controls.Add(L("Tijelo"), 0, 4); t.Controls.Add(_body, 1, 4);
+        var tr = new FlowLayoutPanel { AutoSize = true };
+        tr.Controls.Add(_timeout);
+        tr.Controls.Add(new Label { Text = "sekundi", AutoSize = true, Margin = new Padding(6, 8, 20, 0) });
+        tr.Controls.Add(_show);
+        t.Controls.Add(L("Čekaj najviše"), 0, 5); t.Controls.Add(tr, 1, 5);
+        var help = new Label
+        {
+            AutoSize = true, MaximumSize = new Size(460, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 8, 3, 3),
+            Text = "Zaglavlja: jedno po retku, npr. \"Authorization: Bearer …\". U URL-u, zaglavljima i tijelu možeš koristiti " +
+                   "{naziv} iz koraka \"Unos vrijednosti\", {naziv:url} za kodiranu vrijednost, te {datum}, {vrijeme} i {clipboard}. " +
+                   "Nakon poziva su dostupni {status} i {odgovor}."
+        };
+        t.Controls.Add(help, 1, 6);
+
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 52, Padding = new Padding(10) };
+        var ok = new Button { Text = "U redu", DialogResult = DialogResult.OK, Width = 100, Tag = "primary" };
+        var cancel = new Button { Text = "Odustani", DialogResult = DialogResult.Cancel, Width = 100 };
+        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(ok);
+        Controls.Add(t);
+        Controls.Add(buttons);
+        CancelButton = cancel;
+        ok.Click += (_, _) =>
+        {
+            if (!Uri.TryCreate(_url.Text.Trim().Replace("{", "x").Replace("}", "x"), UriKind.Absolute, out var u) || (u.Scheme != "http" && u.Scheme != "https"))
+            {
+                MessageBox.Show(this, "Upiši ispravan URL koji počinje s http:// ili https://", "HTTP poziv", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                DialogResult = DialogResult.None;
+                return;
+            }
+            step.Method = (string)_method.SelectedItem;
+            step.Url = _url.Text.Trim();
+            step.ContentType = _type.Text.Trim();
+            step.Headers = _headers.Text.Replace("\r\n", "\n");
+            step.Body = _body.Text.Replace("\r\n", "\n");
+            step.TimeoutMs = (int)_timeout.Value * 1000;
+            step.ShowResult = _show.Checked;
+        };
+    }
+}
+
+/// <summary>Uređivanje koraka "Unos vrijednosti".</summary>
+internal sealed class InputStepDialog : DarkDialog
+{
+    public InputStepDialog(MacroStep step)
+    {
+        Text = "Unos vrijednosti";
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        StartPosition = FormStartPosition.CenterParent;
+        MinimizeBox = MaximizeBox = false;
+        ShowInTaskbar = false;
+        ClientSize = new Size(520, 300);
+        Font = Theme.UiFont();
+
+        var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(14) };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        Label L(string text) => new() { Text = text, AutoSize = true, Margin = new Padding(3, 9, 3, 3) };
+        var name = new TextBox { Dock = DockStyle.Fill, Text = string.IsNullOrWhiteSpace(step.Variable) ? "vrijednost" : step.Variable };
+        var prompt = new TextBox { Dock = DockStyle.Fill, Text = step.Prompt ?? "" };
+        var def = new TextBox { Dock = DockStyle.Fill, Text = step.DefaultValue ?? "" };
+        t.Controls.Add(L("Naziv varijable"), 0, 0); t.Controls.Add(name, 1, 0);
+        t.Controls.Add(L("Pitanje"), 0, 1); t.Controls.Add(prompt, 1, 1);
+        t.Controls.Add(L("Zadana vrijednost"), 0, 2); t.Controls.Add(def, 1, 2);
+        t.Controls.Add(new Label
+        {
+            AutoSize = true, MaximumSize = new Size(330, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 10, 3, 3),
+            Text = "Kad makro dođe do ovog koraka, otvori se prozor za unos. Upisana vrijednost se u kasnijim koracima " +
+                   "koristi kao {naziv} (u tekstu, URL-u, tijelu, zaglavljima i argumentima). Odustajanje prekida makro."
+        }, 1, 3);
+
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 52, Padding = new Padding(10) };
+        var ok = new Button { Text = "U redu", DialogResult = DialogResult.OK, Width = 100, Tag = "primary" };
+        var cancel = new Button { Text = "Odustani", DialogResult = DialogResult.Cancel, Width = 100 };
+        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(ok);
+        Controls.Add(t);
+        Controls.Add(buttons);
+        AcceptButton = ok;
+        CancelButton = cancel;
+        ok.Click += (_, _) =>
+        {
+            string n = new string(name.Text.Trim().Where(ch => char.IsLetterOrDigit(ch) || ch == '_').ToArray());
+            if (n.Length == 0)
+            {
+                MessageBox.Show(this, "Naziv varijable smije imati slova, brojeve i _.", "Unos vrijednosti", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                DialogResult = DialogResult.None;
+                return;
+            }
+            step.Variable = n;
+            step.Prompt = prompt.Text;
+            step.DefaultValue = def.Text;
+        };
     }
 }

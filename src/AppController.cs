@@ -54,6 +54,13 @@ public sealed class AppController : IDisposable
         Keyboard.Disconnected += () => _ui.Post(_ => OnDisconnected(), null);
         Hook.KeyEvent += OnHookKey;
         Player.Error += msg => _ui.Post(_ => Notify?.Invoke("Greška makroa: " + msg), null);
+        Player.Info += msg => _ui.Post(_ => Notify?.Invoke(msg), null);
+        Player.Ui = func =>
+        {
+            string result = null;
+            _ui.Send(_ => result = func(), null);
+            return result;
+        };
 
         RebuildKeys();
         Apply(ManualProfile);

@@ -504,6 +504,8 @@ public sealed class MainForm : Form
         right.Controls.Add(Ui.Btn("+ Kašnjenje…", (_, _) => AddDelayStep(), 210));
         right.Controls.Add(Ui.Btn("+ Upiši tekst…", (_, _) => AddTextStep(), 210));
         right.Controls.Add(Ui.Btn("+ Pokreni program…", (_, _) => AddRunStep(), 210));
+        right.Controls.Add(Ui.Btn("+ HTTP poziv (URL)…", (_, _) => AddHttpStep(), 210));
+        right.Controls.Add(Ui.Btn("+ Unos vrijednosti…", (_, _) => AddInputStep(), 210));
         right.Controls.Add(new Label { Height = 10 });
         right.Controls.Add(Ui.Btn("Uredi korak", (_, _) => EditStep(), 210));
         right.Controls.Add(Ui.Btn("Gore", (_, _) => MoveStep(-1), 210));
@@ -969,6 +971,22 @@ public sealed class MainForm : Form
         Insert(new MacroStep { Type = StepType.Run, Path = ofd.FileName, Args = args });
     }
 
+    private void AddHttpStep()
+    {
+        if (CurrentG == 0) return;
+        var step = new MacroStep { Type = StepType.Http, Method = "GET", Url = "https://" };
+        using var d = new HttpStepDialog(step);
+        if (d.ShowDialog(this) == DialogResult.OK) Insert(step);
+    }
+
+    private void AddInputStep()
+    {
+        if (CurrentG == 0) return;
+        var step = new MacroStep { Type = StepType.Input, Variable = "vrijednost" };
+        using var d = new InputStepDialog(step);
+        if (d.ShowDialog(this) == DialogResult.OK) Insert(step);
+    }
+
     private void EditStep()
     {
         var m = Cur(false);
@@ -984,6 +1002,18 @@ public sealed class MainForm : Form
                 string t = PromptDialog.Show(this, "Tekst", "Tekst:", s.Text, true);
                 if (t != null) s.Text = t;
                 break;
+            case StepType.Http:
+            {
+                using var hd = new HttpStepDialog(s);
+                hd.ShowDialog(this);
+                break;
+            }
+            case StepType.Input:
+            {
+                using var idlg = new InputStepDialog(s);
+                idlg.ShowDialog(this);
+                break;
+            }
             case StepType.Run:
                 string a = PromptDialog.Show(this, "Argumenti", $"Argumenti za {Path.GetFileName(s.Path)}:", s.Args);
                 if (a != null) s.Args = a;
