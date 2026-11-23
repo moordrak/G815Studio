@@ -40,6 +40,8 @@ public sealed class HidppDevice : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly object _requestLock = new();
     private readonly Dictionary<ushort, byte> _features = new();
+    // paketi "u letu" kod slanja u prozoru: ključ = (featureIdx << 8) | (fn << 4 | swId)
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, TaskCompletionSource<byte[]>> _inflight = new();
     private volatile TaskCompletionSource<byte[]> _pending;
     private volatile byte _pendingFeature;
     private volatile byte _pendingFunction;
@@ -90,6 +92,20 @@ public sealed class HidppDevice : IDisposable
         byte fnSw = r[3];
         var pending = _pending;
 
+        // odgovori na pakete poslane u prozoru
+        if (feature == 0xFF && r.Length >= 6 && _inflight.TryRemove((r[3] << 8) | r[4], out var failed))
+        {
+            failed.TrySetException(new HidppException(r[5]));
+            return;
+        }
+        if (feature != 0xFF && _inflight.TryRemove((feature << 8) | fnSw, out var done))
+        {
+            var p2 = new byte[Math.Max(0, r.Length - 4)];
+            Array.Copy(r, 4, p2, 0, p2.Length);
+            done.TrySetResult(p2);
+            return;
+        }
+
         // HID++ 2.0 greška: [id][dev][0xFF][featIdx][fn|sw][kod]
         if (feature == 0xFF && pending != null && r.Length >= 6 && r[3] == _pendingFeature && r[4] == _pendingFunction)
         {
@@ -129,6 +145,67 @@ public sealed class HidppDevice : IDisposable
     {
         if (_disposed) throw new ObjectDisposedException(nameof(HidppDevice));
         _stream.Write(Build(featureIndex, function, SwIdFire, args));
+    }
+
+    /// <summary>
+    /// Šalje niz paketa iste značajke s najviše <paramref name="window"/> nepotvrđenih paketa odjednom.
+    /// To je višestruko brže od čekanja svakog paketa, a red tipkovnice se ipak ne prepuni.
+    /// Paket na koji tipkovnica odgovori "zauzeto" (0x08) šalje se ponovno.
+    /// </summary>
+    public int SendBatch(byte featureIndex, IReadOnlyList<(byte Function, byte[] Args)> packets, int window, int timeoutMs)
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(HidppDevice));
+        int busy = 0;
+        lock (_requestLock)
+        {
+            var queue = new Queue<(int Index, int Tries)>();
+            for (int i = 0; i < packets.Count; i++) queue.Enqueue((i, 0));
+            var flight = new Queue<(int Index, int Tries, int Key, Task<byte[]> Task)>();
+            byte sw = 1;
+            try
+            {
+                while (queue.Count > 0 || flight.Count > 0)
+                {
+                    while (flight.Count < window && queue.Count > 0)
+                    {
+                        var (idx, tries) = queue.Dequeue();
+                        var (fn, args) = packets[idx];
+                        byte fnSw = (byte)((fn << 4) | sw);
+                        int key = (featureIndex << 8) | fnSw;
+                        var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+                        _inflight[key] = tcs;
+                        _stream.Write(Build(featureIndex, fn, sw, args));
+                        flight.Enqueue((idx, tries, key, tcs.Task));
+                        sw = (byte)(sw % 9 + 1); // softverski ID 1..9 (0x0A i 0x0B su zauzeti)
+                    }
+
+                    var (fi, ft, fk, task) = flight.Dequeue();
+                    bool finished;
+                    try { finished = task.Wait(timeoutMs); }
+                    catch (AggregateException ae) when (ae.InnerException is HidppException he && he.ErrorCode == 0x08 && ft < 10)
+                    {
+                        busy++;
+                        Thread.Sleep(1 + ft);
+                        queue.Enqueue((fi, ft + 1));
+                        continue;
+                    }
+                    catch (AggregateException ae) when (ae.InnerException != null)
+                    {
+                        throw ae.InnerException;
+                    }
+                    if (!finished)
+                    {
+                        _inflight.TryRemove(fk, out _);
+                        throw new TimeoutException("Tipkovnica nije potvrdila paket boja.");
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var f in flight) _inflight.TryRemove(f.Key, out _);
+            }
+        }
+        return busy;
     }
 
     public byte[] Request(byte featureIndex, byte function, params byte[] args) =>

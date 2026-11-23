@@ -4,7 +4,12 @@ using Microsoft.Win32;
 
 namespace G815Studio;
 
-public enum EffectType { Static, Breathing, Wave, ColorCycle, Reactive, Ripple, Audio, Screen, Off }
+public enum EffectType
+{
+    Static, Breathing, Wave, ColorCycle, Reactive, Ripple, Audio, Screen, Off,
+    // efekti po uzoru na OpenRGB
+    Spectrum, BassPulse, Swirl, RadialRainbow, GradientWave, Starry, Rain, Fire, Visor, Lightning, Mosaic
+}
 
 public sealed class LightingConfig
 {

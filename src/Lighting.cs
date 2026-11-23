@@ -31,6 +31,21 @@ public sealed class EffectRenderer : IDisposable
     private double _lastAudioT;
     private int _frameNo;
 
+    // stanje za zvučne i nasumične efekte
+    private AudioAnalyzer _analyzer;
+    private readonly float[] _bands = new float[16];
+    private readonly float[] _bandHold = new float[16];
+    private float _bassAvg, _beatEnv, _fastLevel;
+    private double _lastBeat = -10, _lastT;
+    private int _beatCount;
+    private readonly Random _rnd = new();
+    private double[] _keyA = Array.Empty<double>(), _keyB = Array.Empty<double>();
+    private Color[] _keyFrom = Array.Empty<Color>(), _keyTo = Array.Empty<Color>();
+    private readonly List<(float X, double Y, double V)> _drops = new();
+    private double _flashT = -10, _flashDur;
+
+    public static bool IsAudioEffect(EffectType e) => e is EffectType.Audio or EffectType.Spectrum or EffectType.BassPulse;
+
     public void AddPress(LightKey k, double t)
     {
         lock (_pressLock)
@@ -49,6 +64,17 @@ public sealed class EffectRenderer : IDisposable
         double speed = Math.Clamp(cfg.Speed, 1, 100) / 50.0;   // 0.02 .. 2
 
         if (cfg.Effect != EffectType.Audio) { _audio?.Dispose(); _audio = null; }
+        if (!IsAudioEffect(cfg.Effect)) { _analyzer?.Dispose(); _analyzer = null; }
+        double dt = Math.Clamp(t - _lastT, 0, 0.25);
+        _lastT = t;
+        if (_keyA.Length != keys.Length)
+        {
+            _keyA = new double[keys.Length];
+            _keyB = new double[keys.Length];
+            _keyFrom = new Color[keys.Length];
+            _keyTo = new Color[keys.Length];
+            for (int i = 0; i < keys.Length; i++) { _keyA[i] = -10; _keyFrom[i] = _keyTo[i] = bg; }
+        }
         if (cfg.Effect != EffectType.Screen) { _screen?.Dispose(); _screen = null; }
 
         Press[] presses;
@@ -136,21 +162,223 @@ public sealed class EffectRenderer : IDisposable
 
             case EffectType.Audio:
             {
+                // vršna razina sa zvučnika (bez kašnjenja), trenutni porast, brzi pad
                 _audio ??= new AudioMeter();
                 float l = 0, r = 0;
                 if (_audio.TryGetPeaks(out float pl, out float pr)) { l = pl; r = pr; }
-                // pad razine ovisi o stvarnom vremenu, ne o broju okvira
-                double dt = Math.Clamp(t - _lastAudioT, 0, 0.5);
-                _lastAudioT = t;
-                double tau = Math.Clamp(0.3 / speed, 0.05, 1.5);
+                double tau = Math.Clamp(0.12 / speed, 0.03, 0.6);
                 double decay = Math.Exp(-dt / tau);
                 _lvlL = (float)Math.Max(l, _lvlL * decay);
                 _lvlR = (float)Math.Max(r, _lvlR * decay);
+                const int steps = 12;   // diskretni koraci: tipke istog koraka dijele boju → manje USB paketa
                 foreach (var key in keys)
                 {
                     double d = Math.Abs(key.NX - 0.5) * 2;
-                    double lvl = Math.Min(1, (key.NX < 0.5 ? _lvlL : _lvlR) * 1.3);
-                    frame[key.Zone] = d <= lvl ? ColorUtil.Lerp(c1, c2, d) : bg;
+                    double lvl = Math.Min(1, (key.NX < 0.5 ? _lvlL : _lvlR) * 1.25);
+                    int lit = (int)Math.Round(lvl * steps);
+                    int step = Math.Min(steps - 1, (int)(d * steps));
+                    frame[key.Zone] = step < lit ? ColorUtil.Lerp(c1, c2, step / (double)(steps - 1)) : bg;
+                }
+                break;
+            }
+
+            case EffectType.Spectrum:
+            {
+                // spektar: stupci = frekvencije (lijevo bas, desno visoki), visina = jačina
+                _analyzer ??= StartAnalyzer();
+                _analyzer.Analyze(_bands, out _, out _);
+                double fall = dt * Math.Clamp(2.2 * speed, 0.4, 6);
+                for (int b2 = 0; b2 < _bands.Length; b2++)
+                    _bandHold[b2] = (float)Math.Max(_bands[b2], _bandHold[b2] - fall);
+                const int rows = 6;
+                foreach (var key in keys)
+                {
+                    int band = Math.Clamp((int)(key.NX * _bands.Length), 0, _bands.Length - 1);
+                    double h = 1 - key.NY;                       // 0 dolje, 1 gore
+                    int row = Math.Clamp((int)(h * rows), 0, rows - 1);
+                    int litRows = (int)Math.Round(_bandHold[band] * rows);
+                    frame[key.Zone] = row < litRows ? ColorUtil.Lerp(c1, c2, row / (double)(rows - 1)) : bg;
+                }
+                break;
+            }
+
+            case EffectType.BassPulse:
+            {
+                // bas puls: na svaki udarac basa tipkovnica bljesne i promijeni boju
+                _analyzer ??= StartAnalyzer();
+                _analyzer.Analyze(_bands, out float level, out float bass);
+                _bassAvg = _bassAvg <= 0 ? bass : _bassAvg + (bass - _bassAvg) * (float)Math.Min(1, dt * 2.5);
+                if (bass > 0.35f && bass > _bassAvg * 1.18f && t - _lastBeat > 0.11)
+                {
+                    _lastBeat = t;
+                    _beatCount++;
+                    _beatEnv = 1;
+                }
+                _beatEnv *= (float)Math.Exp(-dt / Math.Clamp(0.18 / speed, 0.05, 0.8));
+                _fastLevel = Math.Max(level, _fastLevel * (float)Math.Exp(-dt / 0.15));
+                var beatColor = _beatCount % 2 == 0 ? c1 : c2;
+                double k = Math.Min(1, _beatEnv + _fastLevel * 0.25);
+                k = Math.Round(k * 16) / 16;
+                var col = ColorUtil.Lerp(bg, beatColor, k);
+                foreach (var key in keys) frame[key.Zone] = col;
+                break;
+            }
+
+            case EffectType.Swirl:
+            {
+                // spiralna duga: boja ovisi o kutu oko središta, okreće se
+                float cx = keys.Average(k2 => k2.UX), cy = keys.Average(k2 => k2.UY);
+                foreach (var key in keys)
+                {
+                    double ang = Math.Atan2(key.UY - cy, key.UX - cx) / (2 * Math.PI);
+                    frame[key.Zone] = ColorUtil.Hsv(ang + t * 0.15 * speed, 1, 1);
+                }
+                break;
+            }
+
+            case EffectType.RadialRainbow:
+            {
+                float cx = keys.Average(k2 => k2.UX), cy = keys.Average(k2 => k2.UY);
+                foreach (var key in keys)
+                {
+                    double d = Math.Sqrt(Math.Pow(key.UX - cx, 2) + Math.Pow(key.UY - cy, 2));
+                    frame[key.Zone] = ColorUtil.Hsv(d / 14.0 - t * 0.25 * speed, 1, 1);
+                }
+                break;
+            }
+
+            case EffectType.GradientWave:
+                foreach (var key in keys)
+                {
+                    double pos = cfg.Direction switch { 1 => 1 - key.NX, 2 => key.NY, 3 => Math.Abs(key.NX - 0.5) * 2, _ => key.NX };
+                    double k = 0.5 + 0.5 * Math.Sin(2 * Math.PI * (pos - t * 0.25 * speed));
+                    frame[key.Zone] = ColorUtil.Lerp(c1, c2, k);
+                }
+                break;
+
+            case EffectType.Starry:
+            {
+                // zvjezdano nebo: nasumične tipke polako zasvijetle i ugase se
+                double dur = Math.Clamp(1.6 / speed, 0.3, 6);
+                double spawn = dt * keys.Length * 0.09 * speed;
+                while (spawn > 0)
+                {
+                    if (spawn >= 1 || _rnd.NextDouble() < spawn)
+                    {
+                        int i = _rnd.Next(keys.Length);
+                        if (t - _keyA[i] > dur) { _keyA[i] = t; _keyB[i] = _rnd.NextDouble(); }
+                    }
+                    spawn -= 1;
+                }
+                for (int i = 0; i < keys.Length; i++)
+                {
+                    double age = t - _keyA[i];
+                    double k = age >= 0 && age < dur ? Math.Sin(Math.PI * age / dur) : 0;
+                    var star = ColorUtil.Lerp(c1, c2, _keyB[i]);
+                    frame[keys[i].Zone] = ColorUtil.Lerp(bg, star, k);
+                }
+                break;
+            }
+
+            case EffectType.Rain:
+            {
+                // kiša / matrix: kapi padaju po stupcima i ostavljaju trag
+                double v = 9 * speed;
+                double spawnRate = dt * 7 * speed;
+                while (spawnRate > 0)
+                {
+                    if (spawnRate >= 1 || _rnd.NextDouble() < spawnRate)
+                    {
+                        var k0 = keys[_rnd.Next(keys.Length)];
+                        _drops.Add((k0.UX, keys.Min(k2 => k2.UY) - 1, v * (0.7 + _rnd.NextDouble() * 0.6)));
+                    }
+                    spawnRate -= 1;
+                }
+                float maxY = keys.Max(k2 => k2.UY) + 4;
+                for (int d2 = _drops.Count - 1; d2 >= 0; d2--)
+                {
+                    var dr = _drops[d2];
+                    dr.Y += dr.V * dt;
+                    if (dr.Y > maxY) _drops.RemoveAt(d2); else _drops[d2] = dr;
+                }
+                const double trail = 3.0;
+                foreach (var key in keys)
+                {
+                    double best = 0;
+                    foreach (var dr in _drops)
+                    {
+                        if (Math.Abs(key.UX - dr.X) > 0.55) continue;
+                        double behind = dr.Y - key.UY;
+                        if (behind < -0.5 || behind > trail) continue;
+                        double k = behind < 0.5 ? 1 : 1 - (behind - 0.5) / (trail - 0.5);
+                        if (k > best) best = k;
+                    }
+                    var head = best > 0.95 ? ColorUtil.Lerp(c1, Color.White, 0.5) : c1;
+                    frame[key.Zone] = ColorUtil.Lerp(bg, head, Math.Round(best * 8) / 8);
+                }
+                break;
+            }
+
+            case EffectType.Fire:
+            {
+                // vatra: najtoplije dolje, treperi prema gore
+                foreach (var key in keys)
+                {
+                    double n = Noise(key.UX * 0.55, key.UY * 0.5 + t * 2.2 * speed);
+                    double heat = Math.Clamp(key.NY * 1.15 - 0.45 + n * 0.75, 0, 1);
+                    heat = Math.Round(heat * 12) / 12;
+                    frame[key.Zone] = FireColor(heat);
+                }
+                break;
+            }
+
+            case EffectType.Visor:
+            {
+                // skener: svjetlosna traka putuje lijevo-desno i ostavlja trag
+                double p = 0.5 - 0.5 * Math.Cos(t * 1.4 * speed);
+                double dir = Math.Sin(t * 1.4 * speed);
+                foreach (var key in keys)
+                {
+                    double d = key.NX - p;
+                    double k = Math.Abs(d) < 0.04 ? 1 : (Math.Sign(d) == -Math.Sign(dir) ? Math.Max(0, 1 - (Math.Abs(d) - 0.04) / 0.25) : Math.Max(0, 1 - (Math.Abs(d) - 0.04) / 0.05));
+                    frame[key.Zone] = ColorUtil.Lerp(bg, c1, Math.Round(k * 10) / 10);
+                }
+                break;
+            }
+
+            case EffectType.Lightning:
+            {
+                // munja: nasumični bljeskovi cijele tipkovnice
+                if (t - _flashT > _flashDur && _rnd.NextDouble() < dt * 0.6 * speed)
+                {
+                    _flashT = t;
+                    _flashDur = 0.15 + _rnd.NextDouble() * 0.35;
+                }
+                double age = t - _flashT;
+                double k = 0;
+                if (age >= 0 && age < _flashDur)
+                    k = (1 - age / _flashDur) * (0.6 + 0.4 * Math.Abs(Math.Sin(age * 60)));
+                var col = ColorUtil.Lerp(bg, c1, Math.Round(k * 12) / 12);
+                foreach (var key in keys) frame[key.Zone] = col;
+                break;
+            }
+
+            case EffectType.Mosaic:
+            {
+                // mozaik: svaka tipka povremeno glatko prijeđe u novu nasumičnu boju
+                double hold = Math.Clamp(2.5 / speed, 0.3, 10);
+                double fade = Math.Clamp(0.8 / speed, 0.1, 3);
+                for (int i = 0; i < keys.Length; i++)
+                {
+                    if (t - _keyA[i] > hold + _keyB[i] * hold)
+                    {
+                        _keyFrom[i] = ColorUtil.Lerp(_keyFrom[i], _keyTo[i], 1);
+                        _keyTo[i] = ColorUtil.Hsv(_rnd.NextDouble(), 0.85 + _rnd.NextDouble() * 0.15, 1);
+                        _keyA[i] = t;
+                        _keyB[i] = _rnd.NextDouble();
+                    }
+                    double k = Math.Clamp((t - _keyA[i]) / fade, 0, 1);
+                    frame[keys[i].Zone] = ColorUtil.Lerp(_keyFrom[i], _keyTo[i], k);
                 }
                 break;
             }
@@ -174,9 +402,46 @@ public sealed class EffectRenderer : IDisposable
             foreach (var key in keys) frame[key.Zone] = ColorUtil.Scale(frame[key.Zone], bright);
     }
 
+    private static AudioAnalyzer StartAnalyzer()
+    {
+        var a = new AudioAnalyzer();
+        a.Start();
+        return a;
+    }
+
+    private static Color FireColor(double h)
+    {
+        // crna → tamnocrvena → crvena → narančasta → žuta
+        if (h < 0.25) return ColorUtil.Lerp(Color.Black, Color.FromArgb(90, 0, 0), h / 0.25);
+        if (h < 0.5) return ColorUtil.Lerp(Color.FromArgb(90, 0, 0), Color.FromArgb(255, 30, 0), (h - 0.25) / 0.25);
+        if (h < 0.8) return ColorUtil.Lerp(Color.FromArgb(255, 30, 0), Color.FromArgb(255, 130, 0), (h - 0.5) / 0.3);
+        return ColorUtil.Lerp(Color.FromArgb(255, 130, 0), Color.FromArgb(255, 220, 60), (h - 0.8) / 0.2);
+    }
+
+    // glatki 2D šum vrijednosti (0..1)
+    private static double Noise(double x, double y)
+    {
+        int xi = (int)Math.Floor(x), yi = (int)Math.Floor(y);
+        double xf = x - xi, yf = y - yi;
+        double u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+        double a = Hash(xi, yi), b = Hash(xi + 1, yi), c = Hash(xi, yi + 1), d = Hash(xi + 1, yi + 1);
+        return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+    }
+
+    private static double Hash(int x, int y)
+    {
+        unchecked
+        {
+            int h = x * 374761393 + y * 668265263;
+            h = (h ^ (h >> 13)) * 1274126177;
+            return ((h ^ (h >> 16)) & 0x7fffffff) / (double)int.MaxValue;
+        }
+    }
+
     public void Dispose()
     {
         _audio?.Dispose();
+        _analyzer?.Dispose();
         _screen?.Dispose();
     }
 }
@@ -338,6 +603,7 @@ public sealed class LightingEngine : IDisposable
             UpdateStats();
 
             int fps = Math.Clamp(Fps, 5, 60);
+            if (EffectRenderer.IsAudioEffect(cfg.Effect)) fps = Math.Max(fps, 60);
             int wait = 1000 / fps - (int)(_clock.ElapsedMilliseconds - start);
             Thread.Sleep(Math.Max(1, wait));
         }
@@ -442,6 +708,9 @@ internal interface IMMDevice
 {
     [PreserveSig] int Activate(ref Guid iid, int clsCtx, IntPtr activationParams,
         [MarshalAs(UnmanagedType.IUnknown)] out object iface);
+    [PreserveSig] int OpenPropertyStore(int access, out IntPtr store);
+    [PreserveSig] int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+    [PreserveSig] int GetState(out int state);
 }
 
 [ComImport, Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

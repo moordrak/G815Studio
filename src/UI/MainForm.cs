@@ -60,7 +60,18 @@ public sealed class MainForm : Form
         (EffectType.Ripple, "Valovi od pritiska", "Svaki pritisak šalje krug Boje 2 preko tipkovnice."),
         (EffectType.Audio, "Zvuk (VU metar)", "Glasnoća zvuka sa zvučnika: od sredine prema rubovima, prijelaz Boja 1 → Boja 2, ostalo Pozadina."),
         (EffectType.Screen, "Boje sa zaslona", "Tipke preuzimaju boje odgovarajućeg dijela glavnog zaslona."),
-        (EffectType.Off, "Isključeno", "Sve tipke ugašene.")
+        (EffectType.Off, "Isključeno", "Sve tipke ugašene."),
+        (EffectType.Spectrum, "Spektar zvuka", "Stupci prate frekvencije glazbe (lijevo bas, desno visoki tonovi). Boja 1 dolje → Boja 2 gore, ostalo Pozadina."),
+        (EffectType.BassPulse, "Bas puls", "Na svaki udarac basa tipkovnica bljesne, naizmjence Bojom 1 i Bojom 2. Brzina = koliko brzo se gasi."),
+        (EffectType.Swirl, "Spiralna duga", "Duga se okreće oko središta tipkovnice."),
+        (EffectType.RadialRainbow, "Radijalna duga", "Dugini krugovi šire se iz središta."),
+        (EffectType.GradientWave, "Gradijentni val", "Val koji prelijeva Boju 1 u Boju 2. Odaberi smjer i brzinu."),
+        (EffectType.Starry, "Zvjezdano nebo", "Nasumične tipke polako zasvijetle (između Boje 1 i Boje 2) na Pozadini."),
+        (EffectType.Rain, "Kiša / Matrix", "Kapi Boje 1 padaju niz tipkovnicu i ostavljaju trag."),
+        (EffectType.Fire, "Vatra", "Plamen se diže od donjeg reda prema gore."),
+        (EffectType.Visor, "Skener", "Traka Boje 1 putuje lijevo-desno i ostavlja trag, na Pozadini."),
+        (EffectType.Lightning, "Munja", "Nasumični bljeskovi Boje 1 preko cijele tipkovnice."),
+        (EffectType.Mosaic, "Mozaik", "Svaka tipka povremeno glatko prijeđe u novu nasumičnu boju.")
     };
 
     public MainForm(AppController controller)
@@ -297,14 +308,14 @@ public sealed class MainForm : Form
         {
             if (_effectCombo.SelectedIndex < 0) return;
             _effectHelp.Text = Effects[_effectCombo.SelectedIndex].Help;
-            _dirCombo.Enabled = Effects[_effectCombo.SelectedIndex].Type == EffectType.Wave;
+            _dirCombo.Enabled = Effects[_effectCombo.SelectedIndex].Type is EffectType.Wave or EffectType.GradientWave;
             for (int t = 0; t < _tiles.Count; t++) { _tiles[t].Selected = t == _effectCombo.SelectedIndex; _tiles[t].Invalidate(); }
             if (_loading) return;
             P.Lighting.Effect = Effects[_effectCombo.SelectedIndex].Type;
             _c.LightingChanged(P);
         };
-        _effectHelp = new Label { AutoSize = false, Width = 320, Height = 40, ForeColor = SystemColors.GrayText };
-        var tileGrid = new FlowLayoutPanel { AutoSize = true, Width = 330, MaximumSize = new Size(330, 0), WrapContents = true, Margin = new Padding(0) };
+        _effectHelp = new Label { AutoSize = false, Width = 530, Height = 40, ForeColor = SystemColors.GrayText };
+        var tileGrid = new FlowLayoutPanel { AutoSize = true, Width = 540, MaximumSize = new Size(540, 0), WrapContents = true, Margin = new Padding(0) };
         Color H(string h) => ColorTranslator.FromHtml(h);
         var previews = new[]
         {
@@ -316,13 +327,25 @@ public sealed class MainForm : Form
             new[] { H("#34d0ff"), H("#ff3b6b"), H("#34d0ff"), H("#ff3b6b"), H("#34d0ff") },
             new[] { H("#22262e"), H("#ff4d6d"), H("#3ddc84"), H("#3ddc84"), H("#ff4d6d"), H("#22262e") },
             new[] { H("#1e3a5f"), H("#c47b3a"), H("#2f6b4f") },
-            new[] { H("#22262e") }
+            new[] { H("#22262e") },
+            new[] { H("#3ddc84"), H("#3ddc84"), H("#ffe14d"), H("#ff4d6d"), H("#22262e") },
+            new[] { H("#22262e"), H("#ff3b6b"), H("#ff3b6b"), H("#22262e") },
+            new[] { H("#ff3b5c"), H("#ffe14d"), H("#3ddc84"), H("#34d0ff"), H("#8b7bff"), H("#ff3b5c") },
+            new[] { H("#8b7bff"), H("#34d0ff"), H("#3ddc84"), H("#34d0ff"), H("#8b7bff") },
+            new[] { H("#34d0ff"), H("#ff3b6b"), H("#34d0ff") },
+            new[] { H("#0b0d12"), H("#ffffff"), H("#0b0d12"), H("#8b7bff"), H("#0b0d12") },
+            new[] { H("#0b0d12"), H("#3ddc84"), H("#0b0d12"), H("#3ddc84"), H("#0b0d12") },
+            new[] { H("#5a0000"), H("#ff1e00"), H("#ff8200"), H("#ffdc3c") },
+            new[] { H("#0b0d12"), H("#0b0d12"), H("#ff3b5c"), H("#0b0d12") },
+            new[] { H("#0b0d12"), H("#ffffff"), H("#0b0d12") },
+            new[] { H("#ff3b5c"), H("#3ddc84"), H("#ffe14d"), H("#8b7bff"), H("#34d0ff") }
         };
-        string[] shortNames = { "Statično", "Disanje", "Val duge", "Izmjena boja", "Reakcija", "Valovi", "Zvuk (VU)", "Zaslon", "Isključeno" };
+        string[] shortNames = { "Statično", "Disanje", "Val duge", "Izmjena boja", "Reakcija", "Valovi", "Zvuk (VU)", "Zaslon", "Isključeno",
+                                "Spektar", "Bas puls", "Spirala", "Radijalna", "Gradijent", "Zvijezde", "Kiša", "Vatra", "Skener", "Munja", "Mozaik" };
         for (int i = 0; i < Effects.Length; i++)
         {
             int idx = i;
-            var tile = new EffectTile(shortNames[i], previews[i]) { Size = new Size(156, 60) };
+            var tile = new EffectTile(shortNames[i], previews[i]) { Size = new Size(124, 56) };
             tile.Click += (_, _) => _effectCombo.SelectedIndex = idx;
             _tiles.Add(tile);
             tileGrid.Controls.Add(tile);
@@ -690,7 +713,7 @@ public sealed class MainForm : Form
             _speed.Value = Math.Clamp(L.Speed, _speed.Minimum, _speed.Maximum);
             _bright.Value = Math.Clamp(L.Brightness, _bright.Minimum, _bright.Maximum);
             _dirCombo.SelectedIndex = Math.Clamp(L.Direction, 0, 3);
-            _dirCombo.Enabled = L.Effect == EffectType.Wave;
+            _dirCombo.Enabled = L.Effect is EffectType.Wave or EffectType.GradientWave;
             Ui.PaintSwatch(_c1Btn, ColorUtil.Parse(L.Color1));
             Ui.PaintSwatch(_c2Btn, ColorUtil.Parse(L.Color2));
             Ui.PaintSwatch(_bgBtn, ColorUtil.Parse(L.Background));

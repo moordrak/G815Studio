@@ -216,29 +216,31 @@ public sealed class G815Keyboard : IDisposable
     {
         var dev = _dev;
         if (dev == null || _perKey == 0 || changes.Count == 0) return;
-        int packets = 0;
+        var packets = new List<(byte Function, byte[] Args)>();
 
         // Kad se mijenja puno tipki (animacije), slične boje se jače grupiraju:
         // manje paketa = više FPS-a, a razlika od nekoliko nijansi na LED-icama se ne vidi.
-        int shift = changes.Count > 40 ? 4 : 3;
+        int shift = changes.Count > 80 ? 5 : changes.Count > 40 ? 4 : 3;
         var singles = new List<(byte Zone, Color Color)>();
         foreach (var group in changes.GroupBy(c => ((c.Color.R >> shift) << 16) | ((c.Color.G >> shift) << 8) | (c.Color.B >> shift)))
         {
             var list = group.ToList();
-            if (list.Count >= 4)
+            bool black = list.All(c => c.Color.R == 0 && c.Color.G == 0 && c.Color.B == 0);
+            // Crna (gašenje) uvijek ide paketima za pojedinačne tipke: skupni paket (funkcija 6)
+            // s bojom 0,0,0 tipkovnica ne primjenjuje pouzdano, pa bi tipke ostale upaljene.
+            if (list.Count >= 4 && !black)
             {
-                // prosječna boja grupe
                 int r = 0, g = 0, b = 0;
                 foreach (var (_, c) in list) { r += c.R; g += c.G; b += c.B; }
                 byte ar = (byte)(r / list.Count), ag = (byte)(g / list.Count), ab = (byte)(b / list.Count);
+                if (ar == 0 && ag == 0 && ab == 0) { singles.AddRange(list); continue; }
                 for (int i = 0; i < list.Count; i += 13)
                 {
                     var a = Filled16();
                     a[0] = ar; a[1] = ag; a[2] = ab;
                     int n = Math.Min(13, list.Count - i);
                     for (int j = 0; j < n; j++) a[3 + j] = list[i + j].Zone;
-                    SendPacket(dev, 6, a);
-                    packets++;
+                    packets.Add((6, a));
                 }
             }
             else
@@ -259,13 +261,36 @@ public sealed class G815Keyboard : IDisposable
                 a[j * 4 + 2] = col.G;
                 a[j * 4 + 3] = col.B;
             }
-            SendPacket(dev, 1, a);
-            packets++;
+            packets.Add((1, a));
+        }
+
+        if (_noAck)
+        {
+            foreach (var (fn, args) in packets) { dev.Send(_perKey, fn, args); Thread.Sleep(1); }
+        }
+        else
+        {
+            try
+            {
+                BusyRetries += dev.SendBatch(_perKey, packets, Window, 100);
+                _ackTimeouts = 0;
+            }
+            catch (TimeoutException)
+            {
+                if (++_ackTimeouts >= 5)
+                {
+                    _noAck = true;
+                    Log.Write("Tipkovnica ne potvrđuje pakete boja – prelazim na slanje bez čekanja.");
+                }
+            }
         }
 
         SendPacket(dev, 7, Array.Empty<byte>());
-        LastPacketCount = packets + 1;
+        LastPacketCount = packets.Count + 1;
     }
+
+    /// <summary>Broj paketa boja "u letu" (bez čekanja potvrde). 4 je dobar omjer brzine i pouzdanosti.</summary>
+    public int Window { get; set; } = 4;
 
     // Način rada: čekaj potvrdu svakog paketa (zadano). Ako tipkovnica uopće ne potvrđuje,
     // prelazi se na slanje bez čekanja s malim razmakom između paketa.
