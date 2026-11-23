@@ -2,8 +2,13 @@ name: build
 
 on:
   push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -22,3 +27,12 @@ jobs:
         with:
           name: G815Studio
           path: publish/G815Studio.exe
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" publish/G815Studio.exe \
+            --title "G815 Studio ${GITHUB_REF_NAME}" \
+            --notes "Samostalni G815Studio.exe za Windows 10/11 (x64), ne treba instalacija ni .NET. Prije pokretanja potpuno zatvori Logitech G HUB."
