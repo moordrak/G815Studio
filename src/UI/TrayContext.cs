@@ -53,7 +53,7 @@ internal sealed class TrayContext : ApplicationContext
         _ui = SynchronizationContext.Current;
         _c = new AppController();
 
-        _menu = new ContextMenuStrip();
+        _menu = new ContextMenuStrip { Renderer = new DarkRenderer(), BackColor = Theme.Surface, ForeColor = Theme.TextSoft };
         _status = new ToolStripMenuItem("…") { Enabled = false };
         _profilesMenu = new ToolStripMenuItem("Profil");
         _lightsOff = new ToolStripMenuItem("Ugasi osvjetljenje") { CheckOnClick = true };

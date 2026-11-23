@@ -29,12 +29,13 @@ internal static class Ui
         Margin = new Padding(0)
     };
 
-    public static GroupBox Group(string title, Control content)
+    public static Control Group(string title, Control content)
     {
-        var g = new GroupBox { Text = title, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8), Margin = new Padding(6) };
-        content.Location = new Point(8, 22);
-        g.Controls.Add(content);
-        return g;
+        var card = new Card(title);
+        content.Location = new Point(card.Padding.Left, card.Padding.Top);
+        content.BackColor = Theme.Surface;
+        card.Controls.Add(content);
+        return card;
     }
 
     public static Color? PickColor(IWin32Window owner, Color current)
@@ -45,13 +46,26 @@ internal static class Ui
 
     public static void PaintSwatch(Button b, Color c)
     {
-        b.BackColor = c;
+        b.Tag = "swatch";
+        Theme.StyleFlat(b, c, Theme.Border);
         b.ForeColor = ColorUtil.IsLight(c) ? Color.Black : Color.White;
-        b.UseVisualStyleBackColor = false;
     }
 }
 
-internal sealed class PromptDialog : Form
+/// <summary>Dijalog u tamnoj temi.</summary>
+internal abstract class DarkDialog : Form
+{
+    protected override void OnLoad(EventArgs e)
+    {
+        BackColor = Theme.Surface;
+        ForeColor = Theme.Text;
+        Theme.Apply(this);
+        Theme.DarkTitleBar(this);
+        base.OnLoad(e);
+    }
+}
+
+internal sealed class PromptDialog : DarkDialog
 {
     private readonly TextBox _box;
 
@@ -87,7 +101,7 @@ internal sealed class PromptDialog : Form
 }
 
 /// <summary>Hvata sljedeću tipku ili kombinaciju (npr. Ctrl+Shift+S).</summary>
-internal sealed class KeyCaptureDialog : Form
+internal sealed class KeyCaptureDialog : DarkDialog
 {
     private readonly Label _info;
     private Keys _lastModifier = Keys.None;
@@ -144,7 +158,7 @@ internal sealed class KeyCaptureDialog : Form
 }
 
 /// <summary>Odabir pokrenute aplikacije (s prozorom) za automatsko mijenjanje profila.</summary>
-internal sealed class ProcessPickerDialog : Form
+internal sealed class ProcessPickerDialog : DarkDialog
 {
     private readonly ListBox _list;
     public string SelectedExe { get; private set; }

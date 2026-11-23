@@ -14,6 +14,13 @@ public sealed class MainForm : Form
     private readonly Color[] _snapshot = new Color[256];
     private int _tick;
 
+    // okvir (bočni izbornik, zaglavlje)
+    private readonly List<(NavButton Nav, Control Page, string Title, string Subtitle)> _pages = new();
+    private Panel _host;
+    private Label _title, _subtitle, _pill;
+    private readonly Button[] _sideBank = new Button[3];
+    private readonly List<EffectTile> _tiles = new();
+
     // osvjetljenje
     private KeyboardView _kbView;
     private ComboBox _effectCombo, _dirCombo;
@@ -62,12 +69,15 @@ public sealed class MainForm : Form
         Text = "G815 Studio";
         Icon = IconFactory.AppIcon;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(1180, 780);
-        MinimumSize = new Size(980, 640);
-        Font = SystemFonts.MessageBoxFont;
+        Size = new Size(1440, 940);
+        MinimumSize = new Size(1080, 700);
+        Font = Theme.UiFont();
+        BackColor = Theme.Ground;
+        ForeColor = Theme.Text;
         KeyPreview = true;
 
         BuildLayout();
+        Theme.Apply(this);
 
         _c.StateChanged += OnStateChanged;
         _c.MacrosChanged += OnMacrosChanged;
@@ -76,6 +86,13 @@ public sealed class MainForm : Form
         _uiTimer.Start();
 
         ReloadAll();
+        UpdateRecordingUi();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Theme.DarkTitleBar(this);
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
@@ -99,86 +116,239 @@ public sealed class MainForm : Form
 
     private Profile P => _c.ManualProfile;
 
+    private static Button Primary(Button b)
+    {
+        b.Tag = "primary";
+        return b;
+    }
+
     // ================================================================= izgled
 
     private void BuildLayout()
     {
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(8, 6, 8, 0) };
-        top.Controls.Add(Ui.Lbl("Profil:", true));
-        _profileCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
+        // ---- bočni izbornik
+        var side = new Panel { Dock = DockStyle.Left, Width = 240, BackColor = Theme.Sidebar, Padding = new Padding(16, 22, 16, 18) };
+        side.Paint += (_, e) =>
+        {
+            using var p = new Pen(Theme.BorderSoft);
+            e.Graphics.DrawLine(p, side.Width - 1, 0, side.Width - 1, side.Height);
+        };
+        var brand = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Theme.Sidebar };
+        brand.Paint += (_, e) =>
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using (var path = Theme.Rounded(new RectangleF(4, 6, 38, 38), 10))
+            using (var b = new SolidBrush(Color.FromArgb(27, 31, 39)))
+            using (var pen = new Pen(Theme.Border))
+            {
+                g.FillPath(b, path);
+                g.DrawPath(pen, path);
+            }
+            Color[] cols = { Color.FromArgb(255, 77, 109), Color.FromArgb(255, 176, 32), Theme.Good, Theme.Accent, Color.FromArgb(160, 123, 255), Color.FromArgb(255, 77, 109) };
+            for (int i = 0; i < 6; i++)
+                using (var cb = new SolidBrush(cols[i]))
+                    g.FillRectangle(cb, 11 + (i % 3) * 8.5f, 16 + (i / 3) * 9f, 6.5f, 7f);
+            using var f1 = Theme.Heading(13f);
+            using var f2 = Theme.UiFont(8.5f);
+            TextRenderer.DrawText(g, "G815 Studio", f1, new Point(52, 8), Theme.Text);
+            TextRenderer.DrawText(g, "v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3), f2, new Point(54, 30), Theme.Muted);
+        };
+
+        var nav = new FlowLayoutPanel { Dock = DockStyle.Top, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, BackColor = Theme.Sidebar, Padding = new Padding(0, 10, 0, 0) };
+
+        var bankCard = new Panel { Dock = DockStyle.Bottom, Height = 92, BackColor = Theme.Sidebar };
+        bankCard.Paint += (_, e) =>
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using var path = Theme.Rounded(new RectangleF(0.5f, 0.5f, bankCard.Width - 1.5f, bankCard.Height - 1.5f), 12);
+            using var b = new SolidBrush(Color.FromArgb(22, 26, 33));
+            using var pen = new Pen(Theme.BorderSoft);
+            g.FillPath(b, path);
+            g.DrawPath(pen, path);
+            using var f = Theme.UiFont(8f, FontStyle.Bold);
+            TextRenderer.DrawText(g, "AKTIVNA BANKA", f, new Point(14, 12), Theme.Muted);
+        };
+        for (int i = 0; i < 3; i++)
+        {
+            int bank = i + 1;
+            var btn = new Button { Text = "M" + bank, Size = new Size(58, 36), Location = new Point(14 + i * 64, 40), TabStop = true };
+            btn.Click += (_, _) => _c.SetBank(bank);
+            _sideBank[i] = btn;
+            bankCard.Controls.Add(btn);
+        }
+
+        side.Controls.Add(nav);
+        side.Controls.Add(brand);
+        side.Controls.Add(bankCard);
+
+        // ---- zaglavlje
+        var header = new Panel { Dock = DockStyle.Top, Height = 92, BackColor = Theme.Ground, Padding = new Padding(32, 24, 32, 8) };
+        _title = new Label { AutoSize = true, Font = new Font("Segoe UI Semibold", 20f), ForeColor = Theme.Text, Location = new Point(30, 16) };
+        _subtitle = new Label { AutoSize = true, ForeColor = Theme.Muted, Location = new Point(34, 56) };
+        var right = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, BackColor = Theme.Ground, Padding = new Padding(0, 6, 0, 0) };
+        right.Controls.Add(new Label { Text = "Profil", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 12, 8, 0) });
+        _profileCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220, Margin = new Padding(0, 7, 14, 0) };
         _profileCombo.SelectedIndexChanged += (_, _) =>
         {
             if (_loading || _profileCombo.SelectedItem is not string name) return;
             _c.SetActiveProfile(name);
             ReloadAll();
         };
-        top.Controls.Add(_profileCombo);
-        top.Controls.Add(Ui.Lbl("   (uređuješ i koristiš ovaj profil; automatsko mijenjanje u kartici Profili)"));
+        right.Controls.Add(_profileCombo);
+        _pill = new Label { AutoSize = false, Size = new Size(250, 38), TextAlign = ContentAlignment.MiddleCenter, Font = Theme.UiFont(9.5f, FontStyle.Bold), Margin = new Padding(0, 2, 0, 0) };
+        _pill.Paint += PaintPill;
+        right.Controls.Add(_pill);
+        header.Controls.Add(right);
+        header.Controls.Add(_title);
+        header.Controls.Add(_subtitle);
 
-        var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 5) };
-        tabs.TabPages.Add(BuildLightingTab());
-        tabs.TabPages.Add(BuildMacroTab());
-        tabs.TabPages.Add(BuildProfilesTab());
-        tabs.TabPages.Add(BuildSettingsTab());
+        // ---- stranice
+        _host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Ground, Padding = new Padding(24, 0, 24, 12) };
+        AddPage(nav, "Osvjetljenje", "\uE706", "Klikni ili povuci preko tipki za odabir, zatim ih oboji kistom.", BuildLightingTab());
+        AddPage(nav, "Makroi", "\uE765", "G1–G5 u tri banke. Banku na tipkovnici biraš tipkama M1, M2 i M3.", BuildMacroTab());
+        AddPage(nav, "Profili", "\uE8FD", "Svaki profil ima svoje boje i makroe; može se paliti sam prema aplikaciji.", BuildProfilesTab());
+        AddPage(nav, "Postavke", "\uE713", "Pokretanje, raspored, uređaj i ispravak zona.", BuildSettingsTab());
 
-        var status = new StatusStrip();
+        // ---- statusna traka
+        var status = new StatusStrip { BackColor = Theme.Sidebar, ForeColor = Theme.TextSoft, Renderer = new DarkRenderer(), SizingGrip = false };
         _stDevice = new ToolStripStatusLabel { AutoSize = true };
-        _stProfile = new ToolStripStatusLabel { AutoSize = true, BorderSides = ToolStripStatusLabelBorderSides.Left };
-        _stBank = new ToolStripStatusLabel { AutoSize = true, BorderSides = ToolStripStatusLabelBorderSides.Left };
+        _stProfile = new ToolStripStatusLabel { AutoSize = true, Margin = new Padding(16, 3, 0, 2) };
+        _stBank = new ToolStripStatusLabel { AutoSize = true, Margin = new Padding(16, 3, 0, 2) };
         _stInfo = new ToolStripStatusLabel { Spring = true, TextAlign = ContentAlignment.MiddleRight };
         status.Items.AddRange(new ToolStripItem[] { _stDevice, _stProfile, _stBank, _stInfo });
 
-        Controls.Add(tabs);
-        Controls.Add(top);
+        Controls.Add(_host);
+        Controls.Add(header);
+        Controls.Add(side);
         Controls.Add(status);
+        ShowPage(0);
     }
 
-    private TabPage BuildLightingTab()
+    private void AddPage(FlowLayoutPanel nav, string title, string glyph, string subtitle, Control page)
     {
-        var page = new TabPage("Osvjetljenje") { Padding = new Padding(6) };
-        var split = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
-        split.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
-        split.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+        var btn = new NavButton(title, glyph) { Width = 206 };
+        int index = _pages.Count;
+        btn.Click += (_, _) => ShowPage(index);
+        nav.Controls.Add(btn);
+        page.Dock = DockStyle.Fill;
+        page.Visible = false;
+        _host.Controls.Add(page);
+        _pages.Add((btn, page, title, subtitle));
+    }
 
-        _kbView = new KeyboardView { Dock = DockStyle.Fill, ColorOf = k => _snapshot[k.Zone] };
+    private void ShowPage(int index)
+    {
+        for (int i = 0; i < _pages.Count; i++)
+        {
+            var (nav, page, _, _) = _pages[i];
+            nav.Active = i == index;
+            nav.Invalidate();
+            page.Visible = i == index;
+        }
+        _title.Text = _pages[index].Title;
+        _subtitle.Text = _pages[index].Subtitle;
+    }
+
+    private void PaintPill(object sender, PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(Theme.Ground);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        bool ok = _c.Keyboard.IsConnected;
+        var back = ok ? Color.FromArgb(18, 38, 28) : Color.FromArgb(40, 20, 24);
+        var border = ok ? Color.FromArgb(31, 74, 51) : Color.FromArgb(90, 40, 48);
+        var fore = ok ? Color.FromArgb(158, 230, 189) : Color.FromArgb(255, 150, 160);
+        using (var path = Theme.Rounded(new RectangleF(0.5f, 0.5f, _pill.Width - 1.5f, _pill.Height - 1.5f), 10))
+        using (var b = new SolidBrush(back))
+        using (var p = new Pen(border))
+        {
+            g.FillPath(b, path);
+            g.DrawPath(p, path);
+        }
+        using (var dot = new SolidBrush(ok ? Theme.Good : Theme.Danger))
+            g.FillEllipse(dot, 14, _pill.Height / 2 - 4, 8, 8);
+        string text = ok
+            ? $"G815 spojena" + (_c.Engine.MeasuredFps > 0 ? $" · {_c.Engine.MeasuredFps:0} FPS" : "")
+            : "Tipkovnica nije spojena";
+        TextRenderer.DrawText(g, text, _pill.Font, new Rectangle(28, 0, _pill.Width - 34, _pill.Height), fore, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+    }
+
+    private Control BuildLightingTab()
+    {
+        var page = new Panel { Padding = new Padding(0), BackColor = Theme.Ground };
+        var split = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
+        split.RowStyles.Add(new RowStyle(SizeType.Percent, 56));
+        split.RowStyles.Add(new RowStyle(SizeType.Percent, 44));
+
+        _kbView = new KeyboardView { Dock = DockStyle.Fill, ColorOf = k => _snapshot[k.Zone], Margin = new Padding(0, 0, 0, 8) };
         _kbView.SelectionChanged += (_, _) => UpdateSelInfo();
+        _kbView.BankClicked += bank => _c.SetBank(bank);
         split.Controls.Add(_kbView, 0, 0);
 
         var controls = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
 
         // --- efekt
         var fx = Ui.Flow(FlowDirection.TopDown);
-        _effectCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
+        _effectCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260, Visible = false };
         foreach (var e in Effects) _effectCombo.Items.Add(e.Name);
         _effectCombo.SelectedIndexChanged += (_, _) =>
         {
             if (_effectCombo.SelectedIndex < 0) return;
             _effectHelp.Text = Effects[_effectCombo.SelectedIndex].Help;
             _dirCombo.Enabled = Effects[_effectCombo.SelectedIndex].Type == EffectType.Wave;
+            for (int t = 0; t < _tiles.Count; t++) { _tiles[t].Selected = t == _effectCombo.SelectedIndex; _tiles[t].Invalidate(); }
             if (_loading) return;
             P.Lighting.Effect = Effects[_effectCombo.SelectedIndex].Type;
             _c.LightingChanged(P);
         };
-        _effectHelp = new Label { AutoSize = false, Width = 260, Height = 48, ForeColor = SystemColors.GrayText };
+        _effectHelp = new Label { AutoSize = false, Width = 320, Height = 40, ForeColor = SystemColors.GrayText };
+        var tileGrid = new FlowLayoutPanel { AutoSize = true, Width = 330, MaximumSize = new Size(330, 0), WrapContents = true, Margin = new Padding(0) };
+        Color H(string h) => ColorTranslator.FromHtml(h);
+        var previews = new[]
+        {
+            new[] { H("#ff3b5c"), H("#ff3b5c"), H("#34d0ff"), H("#34d0ff") },
+            new[] { H("#0b2a3a"), H("#34d0ff"), H("#0b2a3a") },
+            new[] { H("#34d0ff"), H("#8b7bff"), H("#ff3b5c"), H("#ff9f1a"), H("#ffe14d"), H("#3ddc84") },
+            new[] { H("#8b7bff"), H("#ff3b5c") },
+            new[] { H("#34d0ff"), H("#ff3b6b"), H("#34d0ff"), H("#34d0ff") },
+            new[] { H("#34d0ff"), H("#ff3b6b"), H("#34d0ff"), H("#ff3b6b"), H("#34d0ff") },
+            new[] { H("#22262e"), H("#ff4d6d"), H("#3ddc84"), H("#3ddc84"), H("#ff4d6d"), H("#22262e") },
+            new[] { H("#1e3a5f"), H("#c47b3a"), H("#2f6b4f") },
+            new[] { H("#22262e") }
+        };
+        string[] shortNames = { "Statično", "Disanje", "Val duge", "Izmjena boja", "Reakcija", "Valovi", "Zvuk (VU)", "Zaslon", "Isključeno" };
+        for (int i = 0; i < Effects.Length; i++)
+        {
+            int idx = i;
+            var tile = new EffectTile(shortNames[i], previews[i]) { Size = new Size(156, 60) };
+            tile.Click += (_, _) => _effectCombo.SelectedIndex = idx;
+            _tiles.Add(tile);
+            tileGrid.Controls.Add(tile);
+        }
+        fx.Controls.Add(tileGrid);
         fx.Controls.Add(_effectCombo);
         fx.Controls.Add(_effectHelp);
+        var param = Ui.Flow(FlowDirection.TopDown);
 
-        fx.Controls.Add(Ui.Lbl("Brzina"));
-        _speed = new TrackBar { Minimum = 1, Maximum = 100, TickFrequency = 10, Width = 260 };
+        param.Controls.Add(Ui.Lbl("Brzina"));
+        _speed = new TrackBar { Minimum = 1, Maximum = 100, TickFrequency = 10, Width = 280, TickStyle = TickStyle.None };
         _speed.ValueChanged += (_, _) => { if (_loading) return; P.Lighting.Speed = _speed.Value; _c.LightingChanged(P); };
-        fx.Controls.Add(_speed);
+        param.Controls.Add(_speed);
 
-        fx.Controls.Add(Ui.Lbl("Svjetlina"));
-        _bright = new TrackBar { Minimum = 0, Maximum = 100, TickFrequency = 10, Width = 260 };
+        param.Controls.Add(Ui.Lbl("Svjetlina"));
+        _bright = new TrackBar { Minimum = 0, Maximum = 100, TickFrequency = 10, Width = 280, TickStyle = TickStyle.None };
         _bright.ValueChanged += (_, _) => { if (_loading) return; P.Lighting.Brightness = _bright.Value; _c.LightingChanged(P); };
-        fx.Controls.Add(_bright);
+        param.Controls.Add(_bright);
 
-        fx.Controls.Add(Ui.Lbl("Smjer vala"));
+        param.Controls.Add(Ui.Lbl("Smjer vala"));
         _dirCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
         _dirCombo.Items.AddRange(new object[] { "Lijevo → desno", "Desno → lijevo", "Gore → dolje", "Iz središta" });
         _dirCombo.SelectedIndexChanged += (_, _) => { if (_loading) return; P.Lighting.Direction = _dirCombo.SelectedIndex; _c.LightingChanged(P); };
-        fx.Controls.Add(_dirCombo);
+        param.Controls.Add(_dirCombo);
         controls.Controls.Add(Ui.Group("Efekt", fx));
+        controls.Controls.Add(Ui.Group("Parametri", param));
 
         // --- boje efekta
         var cols = Ui.Flow(FlowDirection.TopDown);
@@ -199,7 +369,7 @@ public sealed class MainForm : Form
         }, 250);
         Ui.PaintSwatch(_brushBtn, _brush);
         paint.Controls.Add(_brushBtn);
-        paint.Controls.Add(Ui.Btn("Oboji odabrane tipke", (_, _) => PaintSelected(_brush), 250));
+        paint.Controls.Add(Primary(Ui.Btn("Oboji odabrane tipke", (_, _) => PaintSelected(_brush), 250)));
         paint.Controls.Add(Ui.Btn("Vrati odabrane na Boju 1", (_, _) => PaintSelected(null), 250));
         paint.Controls.Add(Ui.Btn("Oboji SVE tipke kistom", (_, _) =>
         {
@@ -238,9 +408,9 @@ public sealed class MainForm : Form
         return page;
     }
 
-    private TabPage BuildMacroTab()
+    private Control BuildMacroTab()
     {
-        var page = new TabPage("Makroi") { Padding = new Padding(8) };
+        var page = new Panel { Padding = new Padding(8), BackColor = Theme.Ground };
         var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -341,16 +511,16 @@ public sealed class MainForm : Form
         right.Controls.Add(Ui.Btn("Ukloni odabrane korake", (_, _) => RemoveSteps(), 210));
         right.Controls.Add(Ui.Btn("Očisti makro", (_, _) => ClearMacro(), 210));
         right.Controls.Add(new Label { Height = 10 });
-        right.Controls.Add(Ui.Btn("▶ Testiraj (za 3 s)", async (_, _) => await TestMacro(), 210));
+        right.Controls.Add(Primary(Ui.Btn("▶ Testiraj (za 3 s)", async (_, _) => await TestMacro(), 210)));
         table.Controls.Add(right, 2, 0);
 
         page.Controls.Add(table);
         return page;
     }
 
-    private TabPage BuildProfilesTab()
+    private Control BuildProfilesTab()
     {
-        var page = new TabPage("Profili") { Padding = new Padding(8) };
+        var page = new Panel { Padding = new Padding(8), BackColor = Theme.Ground };
         var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
@@ -400,9 +570,9 @@ public sealed class MainForm : Form
         return page;
     }
 
-    private TabPage BuildSettingsTab()
+    private Control BuildSettingsTab()
     {
-        var page = new TabPage("Postavke") { Padding = new Padding(8), AutoScroll = true };
+        var page = new Panel { Padding = new Padding(8), AutoScroll = true, BackColor = Theme.Ground };
         var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
 
         var general = Ui.Flow(FlowDirection.TopDown);
@@ -583,7 +753,6 @@ public sealed class MainForm : Form
     {
         var kb = _c.Keyboard;
         _stDevice.Text = kb.IsConnected ? "● " + kb.DeviceName : "○ Nije spojeno" + (string.IsNullOrEmpty(_c.LastConnectError) ? "" : " – " + _c.LastConnectError);
-        _stDevice.ForeColor = kb.IsConnected ? Color.ForestGreen : Color.Firebrick;
         _stProfile.Text = "Aktivni profil: " + _c.EffectiveProfile?.Name;
         _stBank.Text = "Banka: M" + _c.Bank + (_c.HardwareRecording ? "  ● SNIMANJE (MR)" : "");
         var eng = _c.Engine;
@@ -596,6 +765,18 @@ public sealed class MainForm : Form
         _devInfo.Text = kb.IsConnected
             ? $"Spojeno: {kb.DeviceName}\nHID++ značajke: {kb.FeatureSummary}\nG tipke preusmjerene: {(kb.HasGKeys ? "da" : "ne")}"
             : "Nije spojeno. " + (_c.LastConnectError ?? "Tražim tipkovnicu…");
+
+        _pill.Invalidate();
+        for (int i = 0; i < 3; i++)
+        {
+            bool on = _c.Bank == i + 1;
+            Theme.StyleFlat(_sideBank[i], on ? Theme.AccentBg : Theme.Sidebar, on ? Theme.Accent : Theme.Border);
+            _sideBank[i].ForeColor = on ? Color.White : Theme.TextSoft;
+            _sideBank[i].Font = Theme.UiFont(9.5f, FontStyle.Bold);
+        }
+        _kbView.Bank = _c.Bank;
+        _kbView.Recording = _c.HardwareRecording;
+        _stDevice.ForeColor = kb.IsConnected ? Theme.Good : Color.FromArgb(255, 138, 155);
 
         string fg = _c.ForegroundApp ?? "?";
         _effLabel.Text = $"Sada aktivan: {_c.EffectiveProfile?.Name}   (zadnja aplikacija u fokusu: {fg})";
@@ -874,8 +1055,8 @@ public sealed class MainForm : Form
         if (IsDisposed) return;
         bool rec = _c.Recorder.IsRecording;
         _recBtn.Text = rec ? "■ Zaustavi snimanje" : "● Snimi";
-        _recBtn.BackColor = rec ? Color.MistyRose : SystemColors.Control;
-        _recBtn.UseVisualStyleBackColor = !rec;
+        Theme.StyleFlat(_recBtn, rec ? Color.FromArgb(70, 22, 30) : Theme.Danger, Theme.Danger);
+        _recBtn.ForeColor = rec ? Color.FromArgb(255, 170, 178) : Color.FromArgb(26, 5, 8);
         _recInfo.Text = !rec ? "" :
             _c.HardwareRecording
                 ? $"Snimam s tipkovnice (MR)… koraka: {_c.Recorder.Count}. Pritisni G tipku za spremanje."

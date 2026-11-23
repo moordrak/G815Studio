@@ -1,37 +1,65 @@
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 
 namespace G815Studio;
 
-/// <summary>Crta tipkovnicu s bojama uživo; klik / povlačenje za odabir tipki (Ctrl dodaje u odabir).</summary>
+/// <summary>
+/// Crta G815 kako je dogovoreno u prijedlogu: crne uzdignute tipke (bočne stranice dolje i desno),
+/// obojeni sjaj ispod tipki, natpisi uz gornji rub, okrugle tipke u gornjoj traci, indikatori,
+/// svijetleće slovo u kutu i kotačić s bevelom. Klik / povlačenje za odabir tipki (Ctrl dodaje).
+/// Statični dio (kućište, tipke, kotačić) crta se jednom u bitmapu; po okviru se crtaju samo sjaj i natpisi.
+/// </summary>
 public sealed class KeyboardView : Control
 {
+    private const float RefU = 44f;           // dimenzije iz prijedloga su za tipku od 44 px
+    private const float PadUnits = 24f / RefU;
+    private const float BottomUnits = 0.9f;
+
     private List<KeyDef> _keys = new();
     private bool _dragging;
     private bool _dragAdd;
+    private Bitmap _static;
+    private Size _staticSize;
+    private Geo _geo;
+    private Region _keyRegion;
+    private readonly List<(RectangleF Rect, int Bank)> _mHits = new();
 
     public HashSet<string> Selected { get; } = new();
     public Func<KeyDef, Color> ColorOf { get; set; }
+    public int Bank { get; set; } = 1;
+    public bool Recording { get; set; }
     public event EventHandler SelectionChanged;
+    public event Action<int> BankClicked;
+
+    private static readonly Color Muted = Color.FromArgb(91, 97, 112);
+
+    private enum RoundKind { Text, Game, Light, Prev, Play, Next, Mute }
+
+    private sealed class Geo
+    {
+        public float S, F, Bx, By, Bw, Bh, PadX;
+        public RectangleF Rect(KeyDef k) => new(Bx + PadX + k.X * S + 2 * F, By + k.Y * S + 2 * F, k.W * S - 4 * F, k.H * S - 4 * F);
+    }
 
     public KeyboardView()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        BackColor = Color.FromArgb(22, 22, 26);
-        MinimumSize = new Size(400, 140);
+        BackColor = Color.FromArgb(10, 11, 14);
+        MinimumSize = new Size(480, 180);
     }
 
     public void SetKeys(List<KeyDef> keys)
     {
         _keys = keys ?? new List<KeyDef>();
         Selected.RemoveWhere(id => _keys.All(k => k.Id != id));
-        Invalidate();
+        InvalidateStatic();
     }
 
     public void SelectWhere(Func<KeyDef, bool> predicate, bool add)
     {
         if (!add) Selected.Clear();
-        foreach (var k in _keys.Where(predicate)) Selected.Add(k.Id);
+        foreach (var k in _keys.Where(k => k.Shape != "logo").Where(predicate)) Selected.Add(k.Id);
         Invalidate();
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -43,23 +71,77 @@ public sealed class KeyboardView : Control
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private (float s, float ox, float oy) Geometry()
+    private void InvalidateStatic()
     {
-        if (_keys.Count == 0) return (1, 0, 0);
-        float tw = _keys.Max(k => k.X + k.W);
-        float th = _keys.Max(k => k.Y + k.H);
-        float s = Math.Max(1, Math.Min((Width - 16) / tw, (Height - 16) / th));
-        return (s, (Width - tw * s) / 2, (Height - th * s) / 2);
+        _static?.Dispose();
+        _static = null;
+        _keyRegion?.Dispose();
+        _keyRegion = null;
+        Invalidate();
     }
 
-    private static RectangleF RectOf(KeyDef k, (float s, float ox, float oy) g) =>
-        new(g.ox + k.X * g.s + 2, g.oy + k.Y * g.s + 2, k.W * g.s - 4, k.H * g.s - 4);
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        InvalidateStatic();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _static?.Dispose();
+            _keyRegion?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
+    // ------------------------------------------------------------------ geometrija
+
+    private IEnumerable<KeyDef> RealKeys => _keys.Where(k => k.Shape != "logo");
+
+    private Geo ComputeGeo()
+    {
+        var real = RealKeys.ToList();
+        if (real.Count == 0) return null;
+        float maxX = real.Max(k => k.X + k.W);
+        float maxY = real.Max(k => k.Y + k.H);
+        float wu = maxX + 2 * PadUnits, hu = maxY + BottomUnits;
+        float s = Math.Max(8, Math.Min((Width - 24) / wu, (Height - 24) / hu));
+        var g = new Geo { S = s, F = s / RefU, PadX = PadUnits * s, Bw = wu * s, Bh = hu * s };
+        g.Bx = (Width - g.Bw) / 2;
+        g.By = (Height - g.Bh) / 2;
+        return g;
+    }
+
+    private KeyDef Find(string id) => _keys.FirstOrDefault(k => k.Id == id);
+
+    private float CenterX(Geo g, string id)
+    {
+        var k = Find(id);
+        if (k == null) return float.NaN;
+        var r = g.Rect(k);
+        return r.X + (r.Width - 7 * g.F) / 2;
+    }
 
     private KeyDef HitTest(Point p)
     {
-        var g = Geometry();
-        return _keys.LastOrDefault(k => RectOf(k, g).Contains(p));
+        var g = _geo ?? ComputeGeo();
+        if (g == null) return null;
+        var logo = Find("LOGO");
+        if (logo != null && LogoRect(g).Contains(p)) return logo;
+        return RealKeys.LastOrDefault(k => g.Rect(k).Contains(p));
     }
+
+    private RectangleF LogoRect(Geo g)
+    {
+        float cx = CenterX(g, "G1");
+        if (float.IsNaN(cx)) cx = g.Bx + g.PadX + 0.5f * g.S;
+        float size = 58 * g.F;
+        return new RectangleF(cx - size / 2, g.By + 38 * g.F - size / 2, size, size);
+    }
+
+    // ------------------------------------------------------------------ pomoćne funkcije za crtanje
 
     private static GraphicsPath Rounded(RectangleF r, float radius)
     {
@@ -73,46 +155,555 @@ public sealed class KeyboardView : Control
         return path;
     }
 
+    /// <summary>ISO Enter: gornji dio pune širine, donji dio uvučen za notch s lijeve strane.</summary>
+    private static GraphicsPath IsoEnter(RectangleF r, float notch, float split, float radius)
+    {
+        float x = r.X, y = r.Y, w = r.Width, h = r.Height, d = radius * 2;
+        var p = new GraphicsPath();
+        p.AddArc(x, y, d, d, 180, 90);
+        p.AddArc(x + w - d, y, d, d, 270, 90);
+        p.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+        p.AddArc(x + notch, y + h - d, d, d, 90, 90);
+        p.AddLine(x + notch, y + h - radius, x + notch, y + split);
+        p.AddArc(x, y + split - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+    }
+
+    private GraphicsPath KeyPath(KeyDef k, RectangleF r, Geo g, bool cap)
+    {
+        float side = cap ? 7 * g.F : 0;
+        var rr = new RectangleF(r.X, r.Y, r.Width - side, r.Height - side);
+        if (k.Shape == "isoEnter")
+            return IsoEnter(rr, 0.25f * g.S, g.S - 4 * g.F - side, (cap ? 6 : 7) * g.F);
+        return Rounded(rr, (cap ? 6 : 7) * g.F);
+    }
+
+    private static Color C(string hex) => ColorTranslator.FromHtml(hex);
+
+    private static bool IsDark(Color c) => c.R + c.G + c.B < 30;
+
+    // ------------------------------------------------------------------ statični sloj
+
+    private void BuildStatic(Geo g)
+    {
+        _static?.Dispose();
+        _static = new Bitmap(Math.Max(1, Width), Math.Max(1, Height));
+        _staticSize = Size;
+        using var gr = Graphics.FromImage(_static);
+        gr.SmoothingMode = SmoothingMode.AntiAlias;
+        gr.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        gr.Clear(BackColor);
+        float f = g.F;
+
+        // kućište: oštri kutovi, okomiti prijelaz, brušeni aluminij
+        var body = new RectangleF(g.Bx, g.By, g.Bw, g.Bh);
+        using (var sh = new SolidBrush(Color.FromArgb(120, 0, 0, 0)))
+            gr.FillRectangle(sh, body.X + 6 * f, body.Y + 16 * f, body.Width, body.Height);
+        using (var lg = new LinearGradientBrush(body, C("#2b2e34"), C("#191b1f"), 90f))
+        {
+            lg.InterpolationColors = new ColorBlend
+            {
+                Colors = new[] { C("#2b2e34"), C("#1e2025"), C("#191b1f") },
+                Positions = new[] { 0f, 0.55f, 1f }
+            };
+            gr.FillRectangle(lg, body);
+        }
+        using (var brushed = new Pen(Color.FromArgb(5, 255, 255, 255), 1))
+            for (float x = body.X; x < body.Right; x += Math.Max(2, 3 * f))
+                gr.DrawLine(brushed, x, body.Y, x, body.Bottom);
+        using (var top = new Pen(Color.FromArgb(20, 255, 255, 255), 1))
+            gr.DrawLine(top, body.X, body.Y + 0.5f, body.Right, body.Y + 0.5f);
+
+        DrawRoller(gr, g);
+
+        // tipke
+        foreach (var k in RealKeys)
+        {
+            var r = g.Rect(k);
+            using (var shadowPath = KeyPath(k, r, g, false))
+            {
+                using var m1 = new Matrix();
+                m1.Translate(2 * f, 3 * f);
+                using (var p1 = (GraphicsPath)shadowPath.Clone())
+                {
+                    p1.Transform(m1);
+                    using var b1 = new SolidBrush(Color.FromArgb(215, 0, 0, 0));
+                    gr.FillPath(b1, p1);
+                }
+                for (int i = 1; i <= 3; i++)
+                {
+                    using var p2 = (GraphicsPath)shadowPath.Clone();
+                    using var m2 = new Matrix();
+                    m2.Translate((2 + i * 2.2f) * f, (3 + i * 2.6f) * f);
+                    p2.Transform(m2);
+                    using var b2 = new SolidBrush(Color.FromArgb(55 - i * 12, 0, 0, 0));
+                    gr.FillPath(b2, p2);
+                }
+            }
+
+            using (var basePath = KeyPath(k, r, g, false))
+            using (var baseBrush = new LinearGradientBrush(r, C("#2c2d31"), C("#050506"), 45f))
+            {
+                baseBrush.InterpolationColors = new ColorBlend
+                {
+                    Colors = new[] { C("#2c2d31"), C("#151619"), C("#050506") },
+                    Positions = new[] { 0f, 0.4f, 1f }
+                };
+                gr.FillPath(baseBrush, basePath);
+            }
+
+            using (var capPath = KeyPath(k, r, g, true))
+            {
+                var cb = capPath.GetBounds();
+                using (var capBrush = new LinearGradientBrush(cb, C("#26272b"), C("#0a0a0c"), 60f))
+                {
+                    capBrush.InterpolationColors = new ColorBlend
+                    {
+                        Colors = new[] { C("#26272b"), C("#131416"), C("#0a0a0c") },
+                        Positions = new[] { 0f, 0.55f, 1f }
+                    };
+                    gr.FillPath(capBrush, capPath);
+                }
+                using (var edge = new Pen(C("#34353a"), Math.Max(1, f)))
+                {
+                    using var shifted = (GraphicsPath)capPath.Clone();
+                    using var m = new Matrix();
+                    m.Translate(0.8f * f, 0.8f * f);
+                    shifted.Transform(m);
+                    var clip = gr.Clip;
+                    gr.SetClip(capPath, CombineMode.Exclude);
+                    gr.DrawPath(edge, shifted);
+                    gr.Clip = clip;
+                }
+                using (var hiBrush = new LinearGradientBrush(cb, Color.FromArgb(70, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 45f))
+                using (var hi = new Pen(hiBrush, Math.Max(1, f)))
+                    gr.DrawPath(hi, capPath);
+            }
+        }
+
+        // okrugle tipke
+        foreach (var rk in RoundKeys(g))
+            DrawRoundBody(gr, rk.Center, g);
+
+        // regija svih tipki: sjaj se crta samo izvan tipki
+        _keyRegion?.Dispose();
+        _keyRegion = new Region(RectangleF.Empty);
+        foreach (var k in RealKeys)
+            using (var kp = KeyPath(k, g.Rect(k), g, false))
+                _keyRegion.Union(kp);
+    }
+
+    private void DrawRoller(Graphics gr, Geo g)
+    {
+        float f = g.F;
+        float cx1 = CenterX(g, "U54"), cx2 = CenterX(g, "U55");
+        if (float.IsNaN(cx1) || float.IsNaN(cx2)) return;
+        float cx = (cx1 + cx2) / 2 + 3.5f * f;
+
+        // ploha (postolje) uz gornji rub
+        var ledge = new RectangleF(cx - 86 * f, g.By, 172 * f, 45 * f);
+        using (var lp = new GraphicsPath())
+        {
+            float d = 28 * f;
+            lp.AddLine(ledge.X, ledge.Y, ledge.Right, ledge.Y);
+            lp.AddArc(ledge.Right - d, ledge.Bottom - d, d, d, 0, 90);
+            lp.AddArc(ledge.X, ledge.Bottom - d, d, d, 90, 90);
+            lp.CloseFigure();
+            using (var sh = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
+            {
+                using var m = new Matrix();
+                m.Translate(0, 4 * f);
+                using var sp = (GraphicsPath)lp.Clone();
+                sp.Transform(m);
+                gr.FillPath(sh, sp);
+            }
+            using (var b = new SolidBrush(C("#26282d"))) gr.FillPath(b, lp);
+        }
+
+        // bevel (skošeni ovratnik) – četiri plohe različite svjetline
+        var outer = new RectangleF(ledge.X + 5 * f, ledge.Y, 162 * f, 40 * f);
+        float t = 4 * f, rt = 12 * f, bt = 11 * f, lt = 12 * f;
+        var inner = new RectangleF(outer.X + lt, outer.Y + t, outer.Width - lt - rt, outer.Height - t - bt);
+        void Facet(Color c, params PointF[] pts)
+        {
+            using var b = new SolidBrush(c);
+            gr.FillPolygon(b, pts);
+        }
+        Facet(C("#2e3035"), new PointF(outer.Left, outer.Top), new PointF(outer.Right, outer.Top), new PointF(inner.Right, inner.Top), new PointF(inner.Left, inner.Top));
+        Facet(C("#222428"), new PointF(outer.Right, outer.Top), new PointF(outer.Right, outer.Bottom), new PointF(inner.Right, inner.Bottom), new PointF(inner.Right, inner.Top));
+        Facet(C("#17181b"), new PointF(outer.Left, outer.Bottom), new PointF(outer.Right, outer.Bottom), new PointF(inner.Right, inner.Bottom), new PointF(inner.Left, inner.Bottom));
+        Facet(C("#27292d"), new PointF(outer.Left, outer.Top), new PointF(outer.Left, outer.Bottom), new PointF(inner.Left, inner.Bottom), new PointF(inner.Left, inner.Top));
+        using (var hole = new SolidBrush(C("#050506"))) gr.FillRectangle(hole, inner);
+
+        // valjak: vodoravne crte, svjetlo slijeva nadesno
+        var cyl = RectangleF.Inflate(inner, -2 * f, -4 * f);
+        if (cyl.Width < 2 || cyl.Height < 2) return;
+        using (var cb = new LinearGradientBrush(cyl, C("#17181b"), C("#141518"), 0f))
+        {
+            cb.InterpolationColors = new ColorBlend
+            {
+                Colors = new[] { C("#17181b"), C("#5d6169"), C("#8a8e96"), C("#5d6169"), C("#141518") },
+                Positions = new[] { 0f, 0.18f, 0.5f, 0.82f, 1f }
+            };
+            using var path = Rounded(cyl, 4 * f);
+            gr.FillPath(cb, path);
+        }
+        using (var line = new Pen(Color.FromArgb(140, 0, 0, 0), Math.Max(1, f)))
+            for (float y = cyl.Top + 1; y < cyl.Bottom; y += Math.Max(2, 3 * f))
+                gr.DrawLine(line, cyl.Left + f, y, cyl.Right - f, y);
+    }
+
+    private IEnumerable<(PointF Center, RoundKind Kind, string Text, int Bank)> RoundKeys(Geo g)
+    {
+        float f = g.F;
+        float topY = g.By + 38 * f;
+        var list = new List<(PointF, RoundKind, string, int)>();
+        void Add(string id, RoundKind kind, string text, int bank, float y)
+        {
+            float x = CenterX(g, id);
+            if (!float.IsNaN(x)) list.Add((new PointF(x, y), kind, text, bank));
+        }
+        Add("U3A", RoundKind.Text, "M1", 1, topY);
+        Add("U3B", RoundKind.Text, "M2", 2, topY);
+        Add("U3C", RoundKind.Text, "M3", 3, topY);
+        Add("U3D", RoundKind.Text, "MR", 0, topY);
+        Add("U3E", RoundKind.Game, null, -1, topY);
+        Add("U3F", RoundKind.Light, null, -1, topY);
+
+        var pause = Find("U48");
+        float mediaY = topY;
+        if (pause != null)
+        {
+            var pr = g.Rect(pause);
+            mediaY = pr.Y + (pr.Height - 7 * f) / 2;
+        }
+        Add("U53", RoundKind.Prev, null, -1, mediaY);
+        Add("U54", RoundKind.Play, null, -1, mediaY);
+        Add("U55", RoundKind.Next, null, -1, mediaY);
+        Add("U56", RoundKind.Mute, null, -1, mediaY);
+        return list;
+    }
+
+    private static void DrawRoundBody(Graphics gr, PointF c, Geo g)
+    {
+        float f = g.F, d = 32 * f;
+        var r = new RectangleF(c.X - d / 2, c.Y - d / 2, d, d);
+        using (var s1 = new SolidBrush(Color.FromArgb(180, 0, 0, 0)))
+            gr.FillEllipse(s1, r.X + 4 * f, r.Y + 6 * f, d, d);
+        using (var s2 = new SolidBrush(Color.Black))
+            gr.FillEllipse(s2, r.X + 2 * f, r.Y + 3 * f, d, d);
+        using (var b = new LinearGradientBrush(r, C("#1e1f22"), C("#050506"), 60f))
+        {
+            b.InterpolationColors = new ColorBlend
+            {
+                Colors = new[] { C("#1e1f22"), C("#0c0d0e"), C("#050506") },
+                Positions = new[] { 0f, 0.6f, 1f }
+            };
+            gr.FillEllipse(b, r);
+        }
+        using var hiBrush = new LinearGradientBrush(r, Color.FromArgb(40, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 45f);
+        using var hi = new Pen(hiBrush, Math.Max(1, f));
+        gr.DrawEllipse(hi, r);
+    }
+
+    // ------------------------------------------------------------------ ikone (crtane u okviru 24×24)
+
+    private static void WithBox(Graphics gr, RectangleF box, float vbW, float vbH, Action<Graphics, float> draw)
+    {
+        var state = gr.Save();
+        gr.TranslateTransform(box.X, box.Y);
+        float sc = Math.Min(box.Width / vbW, box.Height / vbH);
+        gr.ScaleTransform(sc, sc);
+        draw(gr, sc);
+        gr.Restore(state);
+    }
+
+    private static Pen IconPen(Color c, float width)
+    {
+        var p = new Pen(c, width) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        return p;
+    }
+
+    private static void DrawIcon(Graphics gr, string kind, RectangleF box, Color c)
+    {
+        switch (kind)
+        {
+            case "enter":
+                WithBox(gr, box, 24, 24, (g, _) =>
+                {
+                    using var p = IconPen(c, 2.2f);
+                    using var path = new GraphicsPath();
+                    path.AddLine(20, 4, 20, 11);
+                    path.AddArc(14, 8, 6, 6, 0, 90);
+                    path.AddLine(17, 14, 5, 14);
+                    g.DrawPath(p, path);
+                    g.DrawLines(p, new[] { new PointF(9, 10), new PointF(5, 14), new PointF(9, 18) });
+                });
+                break;
+            case "win":
+                WithBox(gr, box, 24, 24, (g, _) =>
+                {
+                    using var p = new Pen(c, 3f) { LineJoin = LineJoin.Miter };
+                    g.DrawRectangle(p, 3, 3, 18, 18);
+                    g.DrawLine(p, 12, 3, 12, 21);
+                    g.DrawLine(p, 3, 12, 21, 12);
+                });
+                break;
+            case "menu":
+                WithBox(gr, box, 24, 24, (g, _) =>
+                {
+                    using var p = IconPen(c, 2.6f);
+                    foreach (float y in new[] { 6f, 12f, 18f })
+                    {
+                        g.DrawLine(p, 9, y, 21, y);
+                        using var b = new SolidBrush(c);
+                        g.FillEllipse(b, 2f, y - 1.7f, 3.4f, 3.4f);
+                    }
+                });
+                break;
+            case "backspace":
+                WithBox(gr, box, 26, 18, (g, _) =>
+                {
+                    using var p = IconPen(c, 2.2f);
+                    g.DrawPolygon(p, new[] { new PointF(8, 2), new PointF(24.5f, 2), new PointF(24.5f, 16), new PointF(8, 16), new PointF(1.5f, 9) });
+                    g.DrawLine(p, 12, 6, 18, 12);
+                    g.DrawLine(p, 18, 6, 12, 12);
+                });
+                break;
+        }
+    }
+
+    private static void DrawRoundIcon(Graphics gr, RoundKind kind, RectangleF box, Color c)
+    {
+        WithBox(gr, box, 24, 24, (g, _) =>
+        {
+            using var p = IconPen(c, 2f);
+            using var fill = new SolidBrush(c);
+            switch (kind)
+            {
+                case RoundKind.Light:
+                    g.DrawEllipse(p, 8, 8, 8, 8);
+                    for (int i = 0; i < 8; i++)
+                    {
+                        double a = i * Math.PI / 4;
+                        g.DrawLine(p, 12 + (float)Math.Cos(a) * 8, 12 + (float)Math.Sin(a) * 8, 12 + (float)Math.Cos(a) * 10, 12 + (float)Math.Sin(a) * 10);
+                    }
+                    break;
+                case RoundKind.Prev:
+                    g.FillRectangle(fill, 5, 5, 3, 14);
+                    g.FillPolygon(fill, new[] { new PointF(20, 5), new PointF(20, 19), new PointF(9, 12) });
+                    break;
+                case RoundKind.Play:
+                    g.FillPolygon(fill, new[] { new PointF(4, 5), new PointF(4, 19), new PointF(13, 12) });
+                    g.FillRectangle(fill, 15, 5, 2.5f, 14);
+                    g.FillRectangle(fill, 19.5f, 5, 2.5f, 14);
+                    break;
+                case RoundKind.Next:
+                    g.FillRectangle(fill, 16, 5, 3, 14);
+                    g.FillPolygon(fill, new[] { new PointF(4, 5), new PointF(4, 19), new PointF(15, 12) });
+                    break;
+                case RoundKind.Mute:
+                    g.DrawPolygon(p, new[] { new PointF(11, 5), new PointF(6, 9), new PointF(3, 9), new PointF(3, 15), new PointF(6, 15), new PointF(11, 19) });
+                    g.DrawLine(p, 22, 9, 16, 15);
+                    g.DrawLine(p, 16, 9, 22, 15);
+                    break;
+                case RoundKind.Game:
+                    // palica za letenje: ručka s gumbom, okidač, manžeta, postolje
+                    using (var grip = Rounded(new RectangleF(9.5f, 2, 6, 11.5f), 1.6f)) g.DrawPath(p, grip);
+                    g.DrawEllipse(p, 11.6f, 3.4f, 1.8f, 1.8f);
+                    g.DrawLine(p, 9.6f, 8.2f, 8.3f, 9.4f);
+                    g.DrawPolygon(p, new[] { new PointF(10.5f, 14.5f), new PointF(14.5f, 14.5f), new PointF(15.3f, 17), new PointF(9.7f, 17) });
+                    using (var b = Rounded(new RectangleF(4, 18, 16, 3.5f), 1.5f)) g.DrawPath(p, b);
+                    break;
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------ crtanje po okviru
+
+    private static void DrawGlowText(Graphics gr, string text, Font font, Color c, RectangleF rect, StringFormat sf, float spread, bool lit)
+    {
+        if (lit)
+        {
+            using var gb = new SolidBrush(Color.FromArgb(70, c));
+            foreach (var (dx, dy) in new[] { (-spread, 0f), (spread, 0f), (0f, -spread), (0f, spread) })
+                gr.DrawString(text, font, gb, new RectangleF(rect.X + dx, rect.Y + dy, rect.Width, rect.Height), sf);
+        }
+        using var b = new SolidBrush(c);
+        gr.DrawString(text, font, b, rect, sf);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         var gr = e.Graphics;
+        var g = ComputeGeo();
+        _geo = g;
+        if (g == null) { gr.Clear(BackColor); return; }
+        if (_static == null || _staticSize != Size) BuildStatic(g);
+        gr.DrawImageUnscaled(_static, 0, 0);
+
         gr.SmoothingMode = SmoothingMode.AntiAlias;
-        gr.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-        var g = Geometry();
-        float fontPx = Math.Clamp(g.s * 0.24f, 7, 16);
-        using var font = new Font("Segoe UI", fontPx, FontStyle.Bold, GraphicsUnit.Pixel);
-        using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        using var capBrush = new SolidBrush(Color.FromArgb(44, 44, 50));
-        using var selPen = new Pen(Color.Gold, 2.5f);
+        gr.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        float f = g.F;
 
-        foreach (var k in _keys)
+        // 1) sjaj ispod tipki (samo izvan tipki)
+        var saved = gr.Clip;
+        if (_keyRegion != null) gr.SetClip(_keyRegion, CombineMode.Exclude);
+        foreach (var k in RealKeys)
         {
-            var r = RectOf(k, g);
-            using (var cap = Rounded(r, g.s * 0.12f)) gr.FillPath(capBrush, cap);
-
             var c = ColorOf?.Invoke(k) ?? Color.Black;
-            bool dark = c.R + c.G + c.B < 24;
-            var inner = RectangleF.Inflate(r, -g.s * 0.10f, -g.s * 0.10f);
-            using (var light = Rounded(inner, g.s * 0.08f))
-            using (var b = new SolidBrush(dark ? Color.FromArgb(30, 30, 34) : c))
-                gr.FillPath(b, light);
-
-            if (!string.IsNullOrEmpty(k.Label))
+            if (IsDark(c)) continue;
+            var r = g.Rect(k);
+            for (int i = 3; i >= 1; i--)
             {
-                var textColor = dark ? Color.FromArgb(150, 150, 160) : ColorUtil.IsLight(c) ? Color.Black : Color.White;
-                using var tb = new SolidBrush(textColor);
-                gr.DrawString(k.Label, font, tb, r, sf);
+                var gl = RectangleF.Inflate(r, i * 3.2f * f, i * 3.2f * f);
+                gl.Offset(i * 1.2f * f, i * 1.6f * f);
+                using var path = Rounded(gl, (7 + i * 3) * f);
+                using var b = new SolidBrush(Color.FromArgb(34 - i * 7, c));
+                gr.FillPath(b, path);
             }
+        }
+        gr.Clip = saved;
+
+        // 2) natpisi i ikone
+        float fontPx = Math.Max(6f, 8f * f);
+        using var font = new Font("Segoe UI Semibold", fontPx, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var sfTop = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Near, FormatFlags = StringFormatFlags.NoWrap };
+        using var sfMid = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap };
+        using var selPen = new Pen(Color.Gold, Math.Max(2, 2.2f * f));
+
+        foreach (var k in RealKeys)
+        {
+            var c = ColorOf?.Invoke(k) ?? Color.Black;
+            bool lit = !IsDark(c);
+            var textColor = lit ? c : Muted;
+            var r = g.Rect(k);
+            float side = 7 * f;
+            var cap = new RectangleF(r.X, r.Y, r.Width - side, r.Height - side);
+            var top = new RectangleF(cap.X + 2 * f, cap.Y + 4 * f, cap.Width - 4 * f, fontPx * 1.6f);
+            float icon = 15 * f;
+
+            if (k.Shape == "isoEnter")
+            {
+                float notch = 0.25f * g.S;
+                var box = new RectangleF(cap.X + notch + (cap.Width - notch - icon) / 2, cap.Y + (cap.Height - icon) / 2, icon, icon);
+                DrawIcon(gr, "enter", box, textColor);
+            }
+            else if (k.Usage == 0xE3 || k.Usage == 0xE7)
+                DrawIcon(gr, "win", new RectangleF(cap.X + (cap.Width - icon) / 2, cap.Y + 5 * f, icon, icon), textColor);
+            else if (k.Usage == 0x65)
+                DrawIcon(gr, "menu", new RectangleF(cap.X + (cap.Width - icon) / 2, cap.Y + 5 * f, icon, icon), textColor);
+            else if (k.Usage == 0x2A)
+                DrawIcon(gr, "backspace", new RectangleF(cap.X + (cap.Width - 18 * f) / 2, cap.Y + 5 * f, 18 * f, 13 * f), textColor);
+            else if (k.Usage == 0x2C)
+            {
+                using var bar = new SolidBrush(textColor);
+                gr.FillRectangle(bar, cap.X + (cap.Width - 30 * f) / 2, cap.Y + 5 * f + 10 * f, 30 * f, Math.Max(1.5f, 3 * f));
+            }
+            else if (k.Usage == 0x58)
+                DrawGlowText(gr, k.Label.ToUpperInvariant(), font, textColor, cap, sfMid, 0.8f * f, lit);
+            else if (!string.IsNullOrEmpty(k.Label))
+                DrawGlowText(gr, k.Label.ToUpperInvariant(), font, textColor, top, sfTop, 0.8f * f, lit);
 
             if (Selected.Contains(k.Id))
-                using (var sel = Rounded(r, g.s * 0.12f)) gr.DrawPath(selPen, sel);
+                using (var sp = KeyPath(k, r, g, false)) gr.DrawPath(selPen, sp);
+        }
+
+        // 3) okrugle tipke: natpisi / ikone
+        _mHits.Clear();
+        using var mFont = new Font("Segoe UI", Math.Max(6f, 10f * f), FontStyle.Bold, GraphicsUnit.Pixel);
+        foreach (var rk in RoundKeys(g))
+        {
+            float d = 32 * f;
+            var rect = new RectangleF(rk.Center.X - d / 2, rk.Center.Y - d / 2, d, d);
+            if (rk.Kind == RoundKind.Text)
+            {
+                bool on = rk.Bank > 0 ? rk.Bank == Bank : Recording;
+                var col = !on ? Color.FromArgb(107, 114, 128) : rk.Bank > 0 ? Color.White : Color.FromArgb(255, 90, 100);
+                DrawGlowText(gr, rk.Text, mFont, col, rect, sfMid, 1.2f * f, on);
+                if (rk.Bank > 0) _mHits.Add((rect, rk.Bank));
+            }
+            else
+            {
+                float isz = (rk.Kind == RoundKind.Light ? 17 : rk.Kind == RoundKind.Game ? 16 : rk.Kind == RoundKind.Mute ? 16 : 15) * f;
+                DrawRoundIcon(gr, rk.Kind, new RectangleF(rk.Center.X - isz / 2, rk.Center.Y - isz / 2, isz, isz), Color.FromArgb(217, 220, 226));
+            }
+        }
+
+        // 4) indikatori Caps Lock / Num Lock iznad F10 i F11
+        using var indFont = new Font("Segoe UI Semibold", Math.Max(5f, 6f * f), FontStyle.Regular, GraphicsUnit.Pixel);
+        DrawIndicator(gr, g, "U43", "CAPS LOCK", IsLocked(Keys.CapsLock), indFont, sfMid);
+        DrawIndicator(gr, g, "U44", "NUM LOCK", IsLocked(Keys.NumLock), indFont, sfMid);
+
+        // 5) svijetleće slovo u gornjem lijevom kutu (zona loga)
+        var logo = Find("LOGO");
+        if (logo != null)
+        {
+            var c = ColorOf?.Invoke(logo) ?? Color.Black;
+            bool lit = !IsDark(c);
+            var col = lit ? c : Color.FromArgb(42, 44, 49);
+            var lr = LogoRect(g);
+            using var lf = new Font("Arial Black", 46 * f, FontStyle.Bold, GraphicsUnit.Pixel);
+            if (lit)
+            {
+                for (int i = 3; i >= 1; i--)
+                {
+                    using var gb = new SolidBrush(Color.FromArgb(28, c));
+                    float sp = i * 2.2f * f;
+                    foreach (var (dx, dy) in new[] { (-sp, 0f), (sp, 0f), (0f, -sp), (0f, sp) })
+                        gr.DrawString("G", lf, gb, new RectangleF(lr.X + dx, lr.Y + dy, lr.Width, lr.Height), sfMid);
+                }
+            }
+            using var lb = new SolidBrush(col);
+            gr.DrawString("G", lf, lb, lr, sfMid);
+            if (Selected.Contains(logo.Id))
+                using (var sp = Rounded(lr, 8 * f)) gr.DrawPath(selPen, sp);
         }
     }
+
+    private static bool IsLocked(Keys k)
+    {
+        try { return Control.IsKeyLocked(k); } catch { return false; }
+    }
+
+    private void DrawIndicator(Graphics gr, Geo g, string keyId, string text, bool on, Font font, StringFormat sf)
+    {
+        float cx = CenterX(g, keyId);
+        if (float.IsNaN(cx)) return;
+        float f = g.F;
+        float topY = g.By + 26 * f;
+        var textRect = new RectangleF(cx - 30 * f, topY, 60 * f, 9 * f);
+        var col = on ? Color.FromArgb(217, 220, 226) : Color.FromArgb(107, 114, 128);
+        DrawGlowText(gr, text, font, col, textRect, sf, 0.6f * f, on);
+        float led = 5 * f;
+        var lr = new RectangleF(cx - led / 2, textRect.Bottom + 4 * f, led, led);
+        if (on)
+        {
+            using var glow = new SolidBrush(Color.FromArgb(90, 255, 255, 255));
+            gr.FillEllipse(glow, RectangleF.Inflate(lr, 2.5f * f, 2.5f * f));
+            using var b = new SolidBrush(Color.White);
+            gr.FillEllipse(b, lr);
+        }
+        else
+        {
+            using var b = new SolidBrush(Color.FromArgb(42, 44, 49));
+            gr.FillEllipse(b, lr);
+        }
+    }
+
+    // ------------------------------------------------------------------ miš
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
         if (e.Button != MouseButtons.Left) return;
+        foreach (var (rect, bank) in _mHits)
+        {
+            if (!rect.Contains(e.Location)) continue;
+            BankClicked?.Invoke(bank);
+            return;
+        }
         bool ctrl = (ModifierKeys & System.Windows.Forms.Keys.Control) != 0;
         var k = HitTest(e.Location);
         if (k == null)
@@ -139,6 +730,7 @@ public sealed class KeyboardView : Control
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        Cursor = _mHits.Any(h => h.Rect.Contains(e.Location)) ? Cursors.Hand : Cursors.Default;
         if (!_dragging) return;
         var k = HitTest(e.Location);
         if (k == null) return;

@@ -12,6 +12,7 @@ public sealed class KeyDef
     public float W { get; init; } = 1;
     public float H { get; init; } = 1;
     public string Group { get; init; }
+    public string Shape { get; init; }   // null = pravokutnik, "isoEnter" = Enter sa zubom ulijevo
 
     public float CenterX => X + W / 2;
     public float CenterY => Y + H / 2;
@@ -30,9 +31,9 @@ public static class KeyLayouts
     public static List<KeyDef> Build(bool iso, IDictionary<string, int> overrides)
     {
         var keys = new List<KeyDef>();
-        const float ox = 1.5f, oy = 1.0f;
+        const float ox = 1.5f, oy = 1.5f;   // oy: gornja traka s okruglim tipkama, kotačićem i logom
 
-        void K(string label, int usage, float x, float y, float w = 1, float h = 1, string group = "main")
+        void K(string label, int usage, float x, float y, float w = 1, float h = 1, string group = "main", string shape = null)
         {
             byte zone = ZoneFromUsage(usage);
             keys.Add(new KeyDef
@@ -46,13 +47,14 @@ public static class KeyLayouts
                 Y = oy + y,
                 W = w,
                 H = h,
-                Group = group
+                Group = group,
+                Shape = shape
             });
         }
 
-        // Logo i G tipke
-        keys.Add(new KeyDef { Id = "LOGO", Label = "G", DefaultZone = 0xD2, Zone = 0xD2, X = 0, Y = 0, W = 1, H = 0.8f, Group = "logo" });
-        float[] gy = { 0, 1.25f, 2.25f, 3.25f, 4.25f };
+        // Logo (svijetleće slovo u gornjem lijevom kutu) i G tipke poravnate od reda brojeva do reda s Ctrl
+        keys.Add(new KeyDef { Id = "LOGO", Label = "G", DefaultZone = 0xD2, Zone = 0xD2, X = 0, Y = 0.25f, W = 1, H = 1, Group = "logo", Shape = "logo" });
+        float[] gy = { 1.25f, 2.25f, 3.25f, 4.25f, 5.25f };
         for (int i = 0; i < 5; i++)
         {
             byte z = (byte)(0xB4 + i);
@@ -96,7 +98,7 @@ public static class KeyLayouts
         for (int i = 0; i < 10; i++) K(row2[i], row2u[i], 1.5f + i, r2, group: "letters");
         K(iso ? "Š" : "[", 0x2F, 11.5f, r2, group: iso ? "letters" : "main");
         K(iso ? "Đ" : "]", 0x30, 12.5f, r2, group: iso ? "letters" : "main");
-        if (iso) K("Enter", 0x28, 13.75f, r2, 1.25f, 2, group: "mods");
+        if (iso) K("Enter", 0x28, 13.5f, r2, 1.5f, 2, group: "mods", shape: "isoEnter");
         else K("\\", 0x31, 13.5f, r2, 1.5f);
         K("Del", 0x4C, 15.25f, r2, group: "nav");
         K("End", 0x4D, 16.25f, r2, group: "nav");
@@ -122,15 +124,8 @@ public static class KeyLayouts
 
         // Red 4
         float r4 = 4.25f;
-        if (iso)
-        {
-            K("Shift", 0xE1, 0, r4, 1.25f, group: "mods");
-            K("<", 0x64, 1.25f, r4);
-        }
-        else
-        {
-            K("Shift", 0xE1, 0, r4, 2.25f, group: "mods");
-        }
+        // G815 (hrvatski raspored) nema tipku lijevo od Y, pa je lijevi Shift širok 2,25
+        K("Shift", 0xE1, 0, r4, 2.25f, group: "mods");
         string[] row4 = iso
             ? new[] { "Y", "X", "C", "V", "B", "N", "M" }
             : new[] { "Z", "X", "C", "V", "B", "N", "M" };
