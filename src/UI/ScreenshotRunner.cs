@@ -31,10 +31,10 @@ internal sealed class ScreenshotRunner : ApplicationContext
             {
                 StartPosition = FormStartPosition.Manual,
                 Location = new Point(0, 0),
-                Size = new Size(1440, 940),
-                TopMost = true
+                AllowOversize = true
             };
             form.Show();
+            form.Size = new Size(1440, 940);
             form.Activate();
             await Task.Delay(2000);
 
@@ -149,20 +149,10 @@ internal sealed class ScreenshotRunner : ApplicationContext
 
     private static void Save(Form f, string dir, string name)
     {
+        // prozor je veći od zaslona, pa se crta sam (ne snima se zaslon)
         var r = f.RectangleToScreen(f.ClientRectangle);
         using var bmp = new Bitmap(r.Width, r.Height, PixelFormat.Format32bppArgb);
-        bool ok = false;
-        try
         {
-            using (var g = Graphics.FromImage(bmp)) g.CopyFromScreen(r.Location, Point.Empty, r.Size);
-            ok = !IsBlank(bmp);
-        }
-        catch
-        {
-        }
-        if (!ok)
-        {
-            // bez radne površine (npr. servis): nacrtaj prozor sam
             using var full = new Bitmap(f.Width, f.Height, PixelFormat.Format32bppArgb);
             f.DrawToBitmap(full, new Rectangle(0, 0, f.Width, f.Height));
             int ox = r.X - f.Left, oy = r.Y - f.Top;

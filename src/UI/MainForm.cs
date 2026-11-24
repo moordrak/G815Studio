@@ -129,6 +129,22 @@ public sealed class MainForm : Form
         UpdateRecordingUi();
     }
 
+    /// <summary>Za snimke zaslona: dopusti prozor veći od zaslona.</summary>
+    internal bool AllowOversize { get; set; }
+
+    protected override void WndProc(ref Message m)
+    {
+        base.WndProc(ref m);
+        if (AllowOversize && m.Msg == 0x0024 /* WM_GETMINMAXINFO */)
+        {
+            // MINMAXINFO: ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize (po 2 inta)
+            System.Runtime.InteropServices.Marshal.WriteInt32(m.LParam, 8, 4000);
+            System.Runtime.InteropServices.Marshal.WriteInt32(m.LParam, 12, 4000);
+            System.Runtime.InteropServices.Marshal.WriteInt32(m.LParam, 32, 4000);
+            System.Runtime.InteropServices.Marshal.WriteInt32(m.LParam, 36, 4000);
+        }
+    }
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
