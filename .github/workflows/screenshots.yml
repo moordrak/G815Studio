@@ -19,6 +19,10 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Publish
         run: dotnet publish G815Studio.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+      - name: Rezolucija zaslona
+        shell: pwsh
+        continue-on-error: true
+        run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
       - name: Snimke zaslona
         shell: pwsh
         run: |

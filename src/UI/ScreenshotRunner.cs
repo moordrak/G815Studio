@@ -34,7 +34,9 @@ internal sealed class ScreenshotRunner : ApplicationContext
                 AllowOversize = true
             };
             form.Show();
-            form.Size = new Size(1440, 940);
+            // WinForms ne da prozor veći od zaslona; SetWindowPos uz WM_GETMINMAXINFO u MainFormu to dopušta
+            SetWindowPos(form.Handle, IntPtr.Zero, 0, 0, 1440, 940, 0x0004 /* SWP_NOZORDER */ | 0x0010 /* SWP_NOACTIVATE */);
+            form.PerformLayout();
             form.Activate();
             await Task.Delay(2000);
 
@@ -69,6 +71,9 @@ internal sealed class ScreenshotRunner : ApplicationContext
             ExitThread();
         }
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     private static async Task Shot(AppController c, MainForm form, string dir, string name, EffectType effect)
     {
