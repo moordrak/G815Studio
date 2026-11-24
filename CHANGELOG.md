@@ -1,5 +1,9 @@
 # Popis promjena
 
+## v1.6.0
+- **Osvjetljenje Logitech miša** (npr. G502 X PLUS), preko LIGHTSPEED prijamnika ili kabela: miš prati efekt tipkovnice (nalazi se desno od numeričke, pa val, vatra i spektar prelaze i na njega) ili svijetli jednom bojom. Uključuje se u *Postavke → Miš*.
+- DPI i tipke miša ostaju kako su namješteni u samom mišu; kod izlaza miš dobiva natrag svoje efekte.
+
 ## v1.5.0
 - **Boje po efektu:** svaki efekt pamti svoje boje, brzinu i smjer. Klik na pločicu efekta prikazuje upravo njegove boje, s nazivima prema namjeni (npr. *Plamen / Vrhovi plamena*, *Dno / Vrh stupca*, *Zvijezda / Nebo*).
 - **Duga ili vlastite boje:** Val duge, Izmjena boja, Spiralna duga, Radijalna duga i Mozaik mogu umjesto duge prelijevati dvije odabrane boje.

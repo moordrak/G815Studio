@@ -28,7 +28,7 @@ public static class KeyLayouts
     public static byte ZoneFromUsage(int usage) =>
         usage >= 0xE0 && usage <= 0xE7 ? (byte)(usage - 0x78) : (byte)(usage - 0x03);
 
-    public static List<KeyDef> Build(bool iso, IDictionary<string, int> overrides)
+    public static List<KeyDef> Build(bool iso, IDictionary<string, int> overrides, int mouseZones = 0)
     {
         var keys = new List<KeyDef>();
         const float ox = 1.5f, oy = 1.5f;   // oy: gornja traka s okruglim tipkama, kotačićem i logom
@@ -169,6 +169,18 @@ public static class KeyLayouts
         R("MEDIA_PLAY", "Play/Pauza", 0x9B, 19.5f, oy, "media");
         R("MEDIA_NEXT", "Sljedeća", 0x9D, 20.5f, oy, "media");
         R("MEDIA_MUTE", "Utišaj", 0x9C, 21.5f, oy, "media");
+
+        // Zone miša: virtualne tipke desno od numeričke tipkovnice, pa efekti (val, vatra…) "prelaze" i na miš.
+        // Ne crtaju se na slici i ne šalju se tipkovnici (zone 0xF0+).
+        for (int i = 0; i < mouseZones && i < 8; i++)
+        {
+            byte z = (byte)(0xF0 + i);
+            keys.Add(new KeyDef
+            {
+                Id = "MOUSE" + i, Label = "Miš " + (i + 1), DefaultZone = z, Zone = z,
+                X = ox + 23.5f, Y = oy + 2.25f + i * 1.0f, W = 1, H = 1, Group = "mouse", Shape = "mouse"
+            });
+        }
 
         if (overrides != null)
         {

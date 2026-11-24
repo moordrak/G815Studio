@@ -32,7 +32,18 @@ public sealed class HidppDevice : IDisposable
 {
     public const byte LongReportId = 0x11;
     public const byte ShortReportId = 0x10;
-    public const byte DeviceIndex = 0xFF;   // žičani uređaj
+    private byte _deviceIndex = 0xFF;      // 0xFF = žičani uređaj, 1..6 = uređaj na LIGHTSPEED/Unifying prijamniku
+
+    /// <summary>Indeks uređaja (0xFF žičano, 1–6 preko prijamnika). Promjena briše predmemoriju značajki.</summary>
+    public byte DeviceIndex
+    {
+        get => _deviceIndex;
+        set
+        {
+            _deviceIndex = value;
+            lock (_features) _features.Clear();
+        }
+    }
     private const byte SwIdRequest = 0x0B;  // zahtjevi na koje čekamo odgovor
     private const byte SwIdFire = 0x0A;     // "pošalji i zaboravi" (boje)
 
@@ -88,6 +99,7 @@ public sealed class HidppDevice : IDisposable
     private void Handle(byte[] r)
     {
         if (r.Length < 4) return;
+        if (r[1] != _deviceIndex) return;   // poruka za drugi uređaj na istom prijamniku
         if (r[0] != LongReportId && r[0] != ShortReportId) return;
 
         byte feature = r[2];
@@ -142,7 +154,7 @@ public sealed class HidppDevice : IDisposable
     {
         var b = new byte[20];
         b[0] = LongReportId;
-        b[1] = DeviceIndex;
+        b[1] = _deviceIndex;
         b[2] = featureIndex;
         b[3] = (byte)((function << 4) | swId);
         if (args != null) Array.Copy(args, 0, b, 4, Math.Min(args.Length, 16));
@@ -248,13 +260,15 @@ public sealed class HidppDevice : IDisposable
     }
 
     /// <summary>Vraća indeks značajke (0 = nije podržana). Koristi Root značajku (indeks 0, funkcija 0).</summary>
-    public byte GetFeatureIndex(ushort featureId)
+    public byte GetFeatureIndex(ushort featureId) => GetFeatureIndex(featureId, 1000);
+
+    public byte GetFeatureIndex(ushort featureId, int timeoutMs)
     {
         lock (_features)
         {
             if (_features.TryGetValue(featureId, out byte cached)) return cached;
         }
-        var r = Request(0x00, 0, (byte)(featureId >> 8), (byte)(featureId & 0xFF));
+        var r = Request(0x00, 0, new[] { (byte)(featureId >> 8), (byte)(featureId & 0xFF) }, timeoutMs);
         byte idx = r.Length > 0 ? r[0] : (byte)0;
         lock (_features) _features[featureId] = idx;
         return idx;

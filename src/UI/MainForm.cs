@@ -52,6 +52,10 @@ public sealed class MainForm : Form
     private NumericUpDown _fps, _zoneNum;
     private Label _devInfo;
     private CheckBox _zoneAuto;
+    private CheckBox _mouseEnable;
+    private RadioButton _mouseFollow, _mouseSolid;
+    private Button _mouseColorBtn;
+    private Label _mouseStatus;
     private readonly System.Windows.Forms.Timer _zoneTimer = new() { Interval = 1000 };
 
     // koje boje i postavke koristi pojedini efekt (null = ne koristi)
@@ -773,6 +777,49 @@ public sealed class MainForm : Form
         _zoneTimer.Tick += (_, _) => StepZone(1);
         flow.Controls.Add(Ui.Group("Ispitivač i ispravak zona", zones));
 
+        // ---- miš
+        var mouse = Ui.Flow(FlowDirection.TopDown);
+        _mouseEnable = new CheckBox { Text = "Upravljaj osvjetljenjem Logitech miša (LIGHTSPEED ili kabel)", AutoSize = true };
+        _mouseEnable.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.MouseEnabled = _mouseEnable.Checked;
+            _c.MouseSettingsChanged();
+        };
+        mouse.Controls.Add(_mouseEnable);
+        var mr = Ui.Flow();
+        _mouseFollow = new RadioButton { Text = "Prati efekt tipkovnice", AutoSize = true, Margin = new Padding(3, 9, 16, 3) };
+        _mouseSolid = new RadioButton { Text = "Jedna boja:", AutoSize = true, Margin = new Padding(3, 9, 6, 3) };
+        _mouseFollow.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.MouseFollow = _mouseFollow.Checked;
+            _c.MouseSettingsChanged();
+        };
+        _mouseColorBtn = Ui.Btn("Boja miša", (_, _) =>
+        {
+            var col = Ui.PickColor(this, ColorUtil.Parse(_c.Settings.MouseColor));
+            if (!col.HasValue) return;
+            _c.Settings.MouseColor = ColorUtil.ToHex(col.Value);
+            Ui.PaintSwatch(_mouseColorBtn, col.Value);
+            _mouseSolid.Checked = true;
+            _c.Settings.MouseFollow = false;
+            _c.MouseSettingsChanged();
+        }, 140);
+        mr.Controls.Add(_mouseFollow);
+        mr.Controls.Add(_mouseSolid);
+        mr.Controls.Add(_mouseColorBtn);
+        mouse.Controls.Add(mr);
+        _mouseStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3) };
+        mouse.Controls.Add(_mouseStatus);
+        mouse.Controls.Add(new Label
+        {
+            AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
+            Text = "Kad miš prati efekt, nalazi se „desno od numeričke tipkovnice“, pa val, vatra ili spektar prelaze i na njega. " +
+                   "DPI i tipke miša ostaju kako su namješteni u samom mišu. G HUB mora biti zatvoren."
+        });
+        flow.Controls.Add(Ui.Group("Miš", mouse));
+
         page.Controls.Add(flow);
         return page;
     }
@@ -804,6 +851,10 @@ public sealed class MainForm : Form
             _profList.SelectedItem = P.Name;
 
             _autostart.Checked = Autostart.IsEnabled;
+            _mouseEnable.Checked = _c.Settings.MouseEnabled;
+            _mouseFollow.Checked = _c.Settings.MouseFollow;
+            _mouseSolid.Checked = !_c.Settings.MouseFollow;
+            Ui.PaintSwatch(_mouseColorBtn, ColorUtil.Parse(_c.Settings.MouseColor));
             _layoutCombo.SelectedIndex = _c.IsIso ? 0 : 1;
             _fps.Value = Math.Clamp(_c.Settings.Fps, 5, 60);
         }
@@ -879,6 +930,8 @@ public sealed class MainForm : Form
         _kbView.Bank = _c.Bank;
         _kbView.Recording = _c.HardwareRecording;
         _stDevice.ForeColor = kb.IsConnected ? Theme.Good : Color.FromArgb(255, 138, 155);
+
+        _mouseStatus.Text = !_c.Settings.MouseEnabled ? "Isključeno." : _c.Mouse.Status;
 
         string fg = _c.ForegroundApp ?? "?";
         _effLabel.Text = $"Sada aktivan: {_c.EffectiveProfile?.Name}   (zadnja aplikacija u fokusu: {fg})";

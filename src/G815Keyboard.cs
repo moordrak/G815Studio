@@ -124,7 +124,7 @@ public sealed class G815Keyboard : IDisposable
         catch (Exception ex) { Log.Write($"{what}: {ex.Message}"); }
     }
 
-    private static string ReadName(HidppDevice dev)
+    internal static string ReadName(HidppDevice dev)
     {
         try
         {

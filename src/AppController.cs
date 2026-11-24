@@ -19,6 +19,9 @@ public sealed class AppController : IDisposable
 
     public AppSettings Settings { get; }
     public G815Keyboard Keyboard { get; } = new();
+    public LogitechMouse Mouse { get; } = new();
+    private bool _mouseConnecting;
+    private int _mouseZonesInLayout = -1;
     public LightingEngine Engine { get; }
     public KeyboardHook Hook { get; } = new();
     public MacroPlayer Player { get; } = new();
@@ -44,7 +47,8 @@ public sealed class AppController : IDisposable
     {
         _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         Settings = SettingsStore.Load();
-        Engine = new LightingEngine(Keyboard) { Fps = Settings.Fps };
+        Engine = new LightingEngine(Keyboard) { Fps = Settings.Fps, Mouse = Mouse };
+        Mouse.Changed += () => _ui.Post(_ => OnMouseChanged(), null);
         Recorder = new MacroRecorder(Hook);
 
         Keyboard.GKeyDown += g => _ui.Post(_ => OnGKeyDown(g), null);
@@ -67,7 +71,7 @@ public sealed class AppController : IDisposable
         Engine.Start();
 
         _connectTimer = new System.Windows.Forms.Timer { Interval = 3000 };
-        _connectTimer.Tick += (_, _) => TryConnect();
+        _connectTimer.Tick += (_, _) => { TryConnect(); TryConnectMouse(); };
         _connectTimer.Start();
 
         _watchTimer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -78,6 +82,7 @@ public sealed class AppController : IDisposable
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); SettingsStore.Save(Settings); };
 
         TryConnect();
+        TryConnectMouse();
     }
 
     // ------------------------------------------------------------ spajanje
@@ -113,6 +118,7 @@ public sealed class AppController : IDisposable
         Keyboard.Release();
         StateChanged?.Invoke();
         TryConnect();
+        TryConnectMouse();
     }
 
     private void OnDisconnected()
@@ -126,7 +132,9 @@ public sealed class AppController : IDisposable
 
     public void RebuildKeys()
     {
-        Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides);
+        int mz = Settings.MouseEnabled && Mouse.IsConnected ? Mouse.ClusterCount : 0;
+        _mouseZonesInLayout = mz;
+        Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides, mz);
         Engine.SetKeys(Keys);
         StateChanged?.Invoke();
     }
@@ -329,6 +337,51 @@ public sealed class AppController : IDisposable
 
     // ------------------------------------------------------------ kraj
 
+    // ------------------------------------------------------------ miš
+
+    private int _mouseTicks;
+
+    public void TryConnectMouse()
+    {
+        if (!Settings.MouseEnabled || Mouse.IsConnected || _mouseConnecting || _disposed) return;
+        if (_mouseTicks++ % 2 != 0) return;     // svakih ~6 s
+        _mouseConnecting = true;
+        Task.Run(() => Mouse.TryConnect()).ContinueWith(_ => _ui.Post(__ => { _mouseConnecting = false; StateChanged?.Invoke(); }, null));
+    }
+
+    /// <summary>Pozvati nakon promjene postavki miša.</summary>
+    public void MouseSettingsChanged()
+    {
+        if (!Settings.MouseEnabled)
+        {
+            Mouse.Release();
+        }
+        else
+        {
+            _mouseTicks = 0;
+            TryConnectMouse();
+        }
+        ApplyMouseMode();
+        SaveSoon();
+        StateChanged?.Invoke();
+    }
+
+    private void ApplyMouseMode()
+    {
+        Engine.MouseFollow = Settings.MouseFollow;
+        if (Settings.MouseEnabled && !Settings.MouseFollow && Mouse.IsConnected)
+            Mouse.SetColors(new[] { Engine.LightsOff ? Color.Black : ColorUtil.Parse(Settings.MouseColor) });
+    }
+
+    private void OnMouseChanged()
+    {
+        int mz = Settings.MouseEnabled && Mouse.IsConnected ? Mouse.ClusterCount : 0;
+        if (mz != _mouseZonesInLayout) RebuildKeys();
+        ApplyMouseMode();
+        if (Mouse.IsConnected) Notify?.Invoke("Miš spojen: " + Mouse.Name);
+        StateChanged?.Invoke();
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -341,6 +394,7 @@ public sealed class AppController : IDisposable
         Hook.Dispose();
         Engine.Dispose();
         Keyboard.Release();
+        Mouse.Release();
         SettingsStore.Save(Settings);
     }
 }

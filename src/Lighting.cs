@@ -517,8 +517,21 @@ public sealed class LightingEngine : IDisposable
         ForceResend();
     }
 
+    /// <summary>Miš koji prati efekt (null = nema). Zone miša se ne šalju tipkovnici.</summary>
+    public LogitechMouse Mouse { get; set; }
+    public volatile bool MouseFollow = true;
+    private readonly bool[] _mouseZone = new bool[256];
+    private int[] _mouseZones = Array.Empty<int>();
+
     public void SetKeys(IEnumerable<KeyDef> defs)
     {
+        var mz = defs.Where(k => k.Shape == "mouse").Select(k => (int)k.Zone).ToArray();
+        lock (_lock)
+        {
+            Array.Clear(_mouseZone);
+            foreach (int z in mz) _mouseZone[z] = true;
+            _mouseZones = mz;
+        }
         var list = defs.ToList();
         float minX = list.Min(k => k.CenterX), minY = list.Min(k => k.CenterY);
         float spanX = Math.Max(1, list.Max(k => k.CenterX) - minX);
@@ -610,6 +623,7 @@ public sealed class LightingEngine : IDisposable
             lock (_snapshot) Array.Copy(_frame, _snapshot, 256);
 
             if (_kb.IsConnected) Send(keys);
+            PushMouse();
             UpdateStats();
 
             int fps = Math.Clamp(Fps, 5, 60);
@@ -619,9 +633,21 @@ public sealed class LightingEngine : IDisposable
         }
     }
 
+    private void PushMouse()
+    {
+        var m = Mouse;
+        if (m == null || !MouseFollow || !m.IsConnected) return;
+        int[] zones;
+        lock (_lock) zones = _mouseZones;
+        if (zones.Length == 0) return;
+        var cols = new Color[zones.Length];
+        for (int i = 0; i < zones.Length; i++) cols[i] = _frame[zones[i]];
+        m.SetColors(cols);
+    }
+
     private void Send(LightKey[] keys)
     {
-        foreach (var k in keys) _everUsed[k.Zone] = true;
+        foreach (var k in keys) if (!_mouseZone[k.Zone]) _everUsed[k.Zone] = true;
 
         var changes = new List<(byte Zone, Color Color)>();
         lock (_sentValid)

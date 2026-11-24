@@ -99,7 +99,7 @@ public sealed class KeyboardView : Control
 
     // ------------------------------------------------------------------ geometrija
 
-    private IEnumerable<KeyDef> RealKeys => _keys.Where(k => k.Shape != "logo" && k.Shape != "round");
+    private IEnumerable<KeyDef> RealKeys => _keys.Where(k => k.Shape != "logo" && k.Shape != "round" && k.Shape != "mouse");
 
     private Geo ComputeGeo()
     {

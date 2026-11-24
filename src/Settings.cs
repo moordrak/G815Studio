@@ -153,6 +153,11 @@ public sealed class AppSettings
     public bool RecordDelays = true;
     public Dictionary<string, int> ZoneOverrides = new();
     public int ConfigVersion;
+
+    // miš (npr. G502 X PLUS)
+    public bool MouseEnabled;
+    public bool MouseFollow = true;       // true = prati efekt tipkovnice, false = jedna boja
+    public string MouseColor = "#00C8FF";
 }
 
 public static class SettingsStore
