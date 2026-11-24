@@ -3,6 +3,8 @@
 Lagana zamjena za Logitech G HUB za tipkovnicu **Logitech G815 LIGHTSYNC** (Windows).
 Bez servisa u pozadini i bez telemetrije. Nema vanjskih ovisnosti: tipkovnicom upravlja izravno preko USB HID-a (Logitechov HID++ 2.0 protokol).
 
+Popis promjena po verzijama je u [CHANGELOG.md](CHANGELOG.md).
+
 ## Mogućnosti
 
 - **Boja svake tipke posebno**: klikni ili povuci preko tipki pa ih oboji kistom; brzi odabir (slova, WASD, F tipke, numerička…)
