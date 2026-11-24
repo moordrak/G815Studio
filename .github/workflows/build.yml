@@ -3,7 +3,6 @@ name: build
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   release:
     types: [published]
@@ -11,6 +10,11 @@ on:
 
 permissions:
   contents: write
+
+# isti tag/grana ne smije imati dva builda u isto vrijeme (inače si međusobno brišu exe na releaseu)
+concurrency:
+  group: build-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -30,15 +34,16 @@ jobs:
           name: G815Studio
           path: publish/G815Studio.exe
       - name: Release
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'release'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ github.event.release.tag_name || github.ref_name }}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" publish/G815Studio.exe --clobber
-          else
-            gh release create "$TAG" publish/G815Studio.exe --title "G815 Studio $TAG" \
-              --notes "Samostalni G815Studio.exe za Windows 10/11 (x64)."
-          fi
+          # do 3 pokušaja (GitHub povremeno vrati 502)
+          for i in 1 2 3; do
+            gh release upload "$TAG" publish/G815Studio.exe --clobber && exit 0
+            echo "Pokušaj $i nije uspio, ponavljam za 10 s…"
+            sleep 10
+          done
+          exit 1
