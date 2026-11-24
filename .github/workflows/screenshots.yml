@@ -1,0 +1,28 @@
+name: screenshots
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['src/UI/**']
+
+jobs:
+  screenshots:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish
+        run: dotnet publish G815Studio.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+      - name: Snimke zaslona
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "publish\G815Studio.exe" -ArgumentList "--screenshots","shots" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); Write-Error "Isteklo vrijeme" }
+          Get-ChildItem shots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: shots/

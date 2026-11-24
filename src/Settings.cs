@@ -157,7 +157,10 @@ public sealed class AppSettings
 
 public static class SettingsStore
 {
-    public static string Folder =>
+    /// <summary>Druga mapa za postavke (koristi se u načinu za snimke zaslona da se ne diraju prave postavke).</summary>
+    public static string FolderOverride { get; set; }
+
+    public static string Folder => FolderOverride ??
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "G815Studio");
 
     public static string FilePath => Path.Combine(Folder, "settings.json");

@@ -21,6 +21,15 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
 
+        int shotIdx = Array.FindIndex(args, a => a.Equals("--screenshots", StringComparison.OrdinalIgnoreCase));
+        if (shotIdx >= 0)
+        {
+            // način za snimke zaslona (koristi ga GitHub Actions za slike u README-u)
+            string dir = shotIdx + 1 < args.Length ? args[shotIdx + 1] : "screenshots";
+            Application.Run(new ScreenshotRunner(dir));
+            return;
+        }
+
         bool startHidden = args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
         Log.Write("Pokretanje G815 Studio " + typeof(Program).Assembly.GetName().Version);
 

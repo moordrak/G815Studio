@@ -23,6 +23,7 @@ public sealed class MainForm : Form
 
     // osvjetljenje
     private KeyboardView _kbView;
+    internal KeyboardView KeyboardViewForScreenshots => _kbView;
     private ComboBox _effectCombo, _dirCombo;
     private TrackBar _speed, _bright;
     private Button _c1Btn, _c2Btn, _bgBtn, _brushBtn;
@@ -279,7 +280,7 @@ public sealed class MainForm : Form
         _pages.Add((btn, page, title, subtitle));
     }
 
-    private void ShowPage(int index)
+    internal void ShowPage(int index)
     {
         for (int i = 0; i < _pages.Count; i++)
         {
@@ -762,7 +763,7 @@ public sealed class MainForm : Form
 
     // ================================================================= punjenje
 
-    private void ReloadAll()
+    internal void ReloadAll()
     {
         _loading = true;
         try
