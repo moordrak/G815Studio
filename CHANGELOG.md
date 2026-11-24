@@ -1,7 +1,11 @@
 # Popis promjena
 
+## v1.6.2
+- Miš: nova opcija *Potpuna kontrola (host način)* za miševe kod kojih ugrađeni profil prepisuje boju; detaljniji zapis odgovora miša u logu.
+- Tipkovnica: prazna mjesta u malim paketima boja pune se drugim stvarnim tipkama (G815 odbija i nule i ponavljanje iste tipke); log kod greške navodi zone odbijenog paketa.
+
 ## v1.6.1
-- Ispravljeno: tipkovnica je odbijala male pakete boja (greška 0x02) kad nisu bili puni, pa se neke tipke nisu osvježavale. Neiskorištena mjesta sada se popunjavaju ponavljanjem zadnje tipke.
+- Pokušaj ispravka greške 0x02 kod nepunih paketa boja (ponavljanjem zadnje tipke).
 - Ista HID++ greška zapisuje se u log najviše jednom u minuti.
 
 ## v1.6.0

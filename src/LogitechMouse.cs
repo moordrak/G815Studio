@@ -31,6 +31,10 @@ public sealed class LogitechMouse : IDisposable
     private DateTime _lastReclaim;
 
     public bool IsConnected => _dev != null;
+
+    /// <summary>Prebaci miš u host (softverski) način dok program radi – potrebno ako ugrađeni profil prepisuje boju.</summary>
+    public bool HostMode { get; set; }
+    private byte _onboard;
     public string Name { get; private set; } = "";
     public string Status { get; private set; } = "Miš nije pronađen.";
     public int ClusterCount { get { lock (_lock) return _clusters.Count; } }
@@ -148,6 +152,21 @@ public sealed class LogitechMouse : IDisposable
         }
         if (_clusters.Count == 0) return false;
         _desired = Enumerable.Repeat(-1, _clusters.Count).ToArray();
+        _onboard = 0;
+        if (HostMode)
+        {
+            _onboard = TryFeature(dev, 0x8100);
+            if (_onboard != 0)
+            {
+                try
+                {
+                    var r = dev.Request(_onboard, 1, new byte[] { 0x02 }, 400);
+                    Log.Write("Miš: host način uključen, odgovor " + Hex(r));
+                }
+                catch (Exception ex) { Log.Write("Miš: host način nije uspio: " + ex.Message); }
+            }
+            else Log.Write("Miš nema značajku ugrađenih profila (0x8100).");
+        }
         if (v8071) ClaimSoftwareControl(dev);
         return true;
     }
@@ -159,7 +178,9 @@ public sealed class LogitechMouse : IDisposable
         {
             try
             {
-                dev.Request(_feat, 5, args, 400);
+                var r = dev.Request(_feat, 5, args, 400);
+                if ((DateTime.UtcNow - _lastReclaim).TotalSeconds > 60)
+                    Log.Write($"Miš: softverska kontrola {BitConverter.ToString(args)} → {Hex(r)}");
                 _lastReclaim = DateTime.UtcNow;
                 return;
             }
@@ -254,8 +275,17 @@ public sealed class LogitechMouse : IDisposable
         a[3] = (byte)(rgb >> 8);
         a[4] = (byte)rgb;
         a[12] = _persist;
-        dev.Request(_feat, (byte)(_v8071 ? 1 : 3), a, 300);
+        var r = dev.Request(_feat, (byte)(_v8071 ? 1 : 3), a, 300);
+        if (!_loggedSet)
+        {
+            _loggedSet = true;
+            Log.Write($"Miš: postavljena boja #{rgb:X6} (zona {cl.Index}, efekt {cl.StaticEffectIndex}) → {Hex(r)}");
+        }
     }
+
+    private bool _loggedSet;
+
+    private static string Hex(byte[] r) => r == null ? "-" : BitConverter.ToString(r.Take(8).ToArray());
 
     private void OnDisconnected()
     {
@@ -289,6 +319,7 @@ public sealed class LogitechMouse : IDisposable
         if (dev == null) return;
         dev.Disconnected -= OnDisconnected;
         try { if (_v8071) dev.Request(_feat, 5, new byte[] { 0x01, 0x00, 0x00 }, 300); } catch { }
+        try { if (_onboard != 0) dev.Request(_onboard, 1, new byte[] { 0x01 }, 300); } catch { }
         dev.Dispose();
         Changed?.Invoke();
     }

@@ -158,6 +158,7 @@ public sealed class AppSettings
     public bool MouseEnabled;
     public bool MouseFollow = true;       // true = prati efekt tipkovnice, false = jedna boja
     public string MouseColor = "#00C8FF";
+    public bool MouseHostMode;            // miš u host načinu dok program radi
 }
 
 public static class SettingsStore

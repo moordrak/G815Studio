@@ -48,6 +48,7 @@ public sealed class AppController : IDisposable
         _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         Settings = SettingsStore.Load();
         Engine = new LightingEngine(Keyboard) { Fps = Settings.Fps, Mouse = Mouse };
+        Mouse.HostMode = Settings.MouseHostMode;
         Mouse.Changed += () => _ui.Post(_ => OnMouseChanged(), null);
         Recorder = new MacroRecorder(Hook);
 
@@ -352,9 +353,13 @@ public sealed class AppController : IDisposable
     /// <summary>Pozvati nakon promjene postavki miša.</summary>
     public void MouseSettingsChanged()
     {
-        if (!Settings.MouseEnabled)
+        if (!Settings.MouseEnabled || Mouse.HostMode != Settings.MouseHostMode)
         {
             Mouse.Release();
+        }
+        Mouse.HostMode = Settings.MouseHostMode;
+        if (!Settings.MouseEnabled)
+        {
         }
         else
         {

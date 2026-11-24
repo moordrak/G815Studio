@@ -52,7 +52,7 @@ public sealed class MainForm : Form
     private NumericUpDown _fps, _zoneNum;
     private Label _devInfo;
     private CheckBox _zoneAuto;
-    private CheckBox _mouseEnable;
+    private CheckBox _mouseEnable, _mouseHost;
     private RadioButton _mouseFollow, _mouseSolid;
     private Button _mouseColorBtn;
     private Label _mouseStatus;
@@ -810,6 +810,18 @@ public sealed class MainForm : Form
         mr.Controls.Add(_mouseSolid);
         mr.Controls.Add(_mouseColorBtn);
         mouse.Controls.Add(mr);
+        _mouseHost = new CheckBox
+        {
+            Text = "Potpuna kontrola (host način) – uključi ako miš ne mijenja boju. Dok program radi, DPI i tipke miša rade po tvorničkim postavkama.",
+            AutoSize = true, MaximumSize = new Size(900, 0), Margin = new Padding(3, 8, 3, 3)
+        };
+        _mouseHost.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.MouseHostMode = _mouseHost.Checked;
+            _c.MouseSettingsChanged();
+        };
+        mouse.Controls.Add(_mouseHost);
         _mouseStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3) };
         mouse.Controls.Add(_mouseStatus);
         mouse.Controls.Add(new Label
@@ -852,6 +864,7 @@ public sealed class MainForm : Form
 
             _autostart.Checked = Autostart.IsEnabled;
             _mouseEnable.Checked = _c.Settings.MouseEnabled;
+            _mouseHost.Checked = _c.Settings.MouseHostMode;
             _mouseFollow.Checked = _c.Settings.MouseFollow;
             _mouseSolid.Checked = !_c.Settings.MouseFollow;
             Ui.PaintSwatch(_mouseColorBtn, ColorUtil.Parse(_c.Settings.MouseColor));

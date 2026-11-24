@@ -213,15 +213,18 @@ public sealed class G815Keyboard : IDisposable
     /// ostale idu po 4 u paketu. Na kraju ide "commit" (funkcija 7).
     /// Svaki paket čeka potvrdu tipkovnice, pa se njezin red nikad ne prepuni (greška 0x08 "zauzeto").
     /// </summary>
-    public void SendColors(IReadOnlyList<(byte Zone, Color Color)> changes)
+    public void SendColors(IReadOnlyList<(byte Zone, Color Color)> changes) => SendColors(changes, null);
+
+    /// <param name="current">trenutne boje svih tipki tipkovnice – njima se popunjavaju prazna mjesta u malim paketima</param>
+    public void SendColors(IReadOnlyList<(byte Zone, Color Color)> changes, IReadOnlyList<(byte Zone, Color Color)> current)
     {
         var dev = _dev;
         if (dev == null || _perKey == 0 || changes.Count == 0) return;
 
         // Isto kao OpenRGB: promijenjene tipke grupiraju se po boji. Grupa od 4+ tipke ide
-        // "velikim" paketom (funkcija 6: boja + do 13 tipki), ostale "malim" (funkcija 1: 4× tipka+boja).
-        // Neiskorišteni bajtovi su 0. Paketi se šalju redom BEZ čekanja potvrde (G815 potvrđuje
-        // samo greške), a na kraju ide commit (funkcija 7).
+        // "velikim" paketom (funkcija 6: boja + do 13 tipki, ostatak 0), ostale "malim" (funkcija 1: 4× tipka+boja).
+        // Mali paket G815 prihvaća samo s 4 različite postojeće tipke (s nulama ili ponavljanjem vraća 0x02),
+        // pa se prazna mjesta pune drugim tipkama s njihovom trenutnom bojom.
         var packets = new List<(byte Function, byte[] Args)>();
         var singles = new List<(byte Zone, Color Color)>();
         foreach (var group in changes.GroupBy(c => ColorUtil.Rgb(c.Color)))
@@ -235,8 +238,7 @@ public sealed class G815Keyboard : IDisposable
                     var a = new byte[16];
                     a[0] = col.R; a[1] = col.G; a[2] = col.B;
                     int n = Math.Min(13, list.Count - i);
-                    // neiskorištena mjesta: ponovi zadnju tipku (zona 0 ne postoji i tipkovnica bi odbila paket)
-                    for (int j = 0; j < 13; j++) a[3 + j] = list[i + Math.Min(j, n - 1)].Zone;
+                    for (int j = 0; j < n; j++) a[3 + j] = list[i + j].Zone;
                     packets.Add((6, a));
                 }
             }
@@ -245,15 +247,25 @@ public sealed class G815Keyboard : IDisposable
                 singles.AddRange(list);
             }
         }
+
+        if (singles.Count % 4 != 0 && current != null)
+        {
+            var changed = new HashSet<byte>(changes.Select(c => c.Zone));
+            foreach (var f in current)
+            {
+                if (singles.Count % 4 == 0) break;
+                if (f.Zone == 0 || changed.Contains(f.Zone)) continue;
+                singles.Add(f);
+                changed.Add(f.Zone);
+            }
+        }
         for (int i = 0; i < singles.Count; i += 4)
         {
             var a = new byte[16];
             int n = Math.Min(4, singles.Count - i);
-            // mali paket uvijek ima 4 unosa: neiskorištene popuni ponavljanjem zadnje tipke
-            // (s nulama tipkovnica vraća grešku 0x02 i odbaci cijeli paket)
-            for (int j = 0; j < 4; j++)
+            for (int j = 0; j < n; j++)
             {
-                var (zone, col) = singles[i + Math.Min(j, n - 1)];
+                var (zone, col) = singles[i + j];
                 a[j * 4] = zone;
                 a[j * 4 + 1] = col.R;
                 a[j * 4 + 2] = col.G;
@@ -266,7 +278,10 @@ public sealed class G815Keyboard : IDisposable
         bool pace = DateTime.UtcNow < _paceUntil;
         foreach (var (fn, args) in packets)
         {
-            dev.Send(_perKey, fn, args);      // WriteFile čeka dok paket ne ode na USB
+            // svaki paket dobiva svoj softverski ID (1–9), pa se iz greške zna koji je paket odbijen
+            _sw = (byte)(_sw % 9 + 1);
+            lock (_recent) _recent[_sw] = (fn, args);
+            dev.Send(_perKey, fn, args, _sw);  // WriteFile čeka dok paket ne ode na USB
             if (pace) Thread.Sleep(1);
         }
 
@@ -303,6 +318,21 @@ public sealed class G815Keyboard : IDisposable
     private DateTime _paceUntil;
 
     private readonly Dictionary<int, DateTime> _errLogged = new();
+    private readonly Dictionary<byte, (byte Fn, byte[] Args)> _recent = new();
+    private byte _sw;
+
+    private string DescribePacket(byte fnSw)
+    {
+        lock (_recent)
+        {
+            if (!_recent.TryGetValue((byte)(fnSw & 0x0F), out var p) || p.Fn != fnSw >> 4) return "";
+            var a = p.Args;
+            var zones = p.Fn == 6
+                ? a.Skip(3).Where(z => z != 0).Select(z => $"0x{z:X2}")
+                : Enumerable.Range(0, 4).Select(j => $"0x{a[j * 4]:X2}");
+            return " – zone u paketu: " + string.Join(", ", zones);
+        }
+    }
 
     private void OnDeviceError(byte feature, byte fnSw, byte code)
     {
@@ -314,7 +344,7 @@ public sealed class G815Keyboard : IDisposable
             if (_errLogged.TryGetValue(key, out var last) && (DateTime.UtcNow - last).TotalSeconds < 60) return;
             _errLogged[key] = DateTime.UtcNow;
         }
-        Log.Write($"HID++ greška 0x{code:X2} (značajka 0x{feature:X2}, funkcija 0x{fnSw:X2})");
+        Log.Write($"HID++ greška 0x{code:X2} (značajka 0x{feature:X2}, funkcija 0x{fnSw:X2}){(feature == _perKey ? DescribePacket(fnSw) : "")}");
     }
 
     private static byte[] Filled16()

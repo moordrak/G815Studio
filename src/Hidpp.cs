@@ -162,10 +162,13 @@ public sealed class HidppDevice : IDisposable
     }
 
     /// <summary>Šalje bez čekanja odgovora (koristi se za boje).</summary>
-    public void Send(byte featureIndex, byte function, byte[] args)
+    public void Send(byte featureIndex, byte function, byte[] args) => Send(featureIndex, function, args, SwIdFire);
+
+    /// <summary>Šalje bez čekanja odgovora s odabranim softverskim ID-om (1–15, ne 0x0B), za praćenje grešaka po paketu.</summary>
+    public void Send(byte featureIndex, byte function, byte[] args, byte swId)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(HidppDevice));
-        _stream.Write(Build(featureIndex, function, SwIdFire, args));
+        _stream.Write(Build(featureIndex, function, (byte)(swId & 0x0F), args));
     }
 
     /// <summary>

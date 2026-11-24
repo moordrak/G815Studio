@@ -665,7 +665,10 @@ public sealed class LightingEngine : IDisposable
         long t0 = _clock.ElapsedTicks;
         try
         {
-            _kb.SendColors(changes);
+            var current = new List<(byte Zone, Color Color)>();
+            for (int z = 1; z < 256; z++)
+                if (_everUsed[z] && _sentValid[z]) current.Add(((byte)z, _sent[z]));
+            _kb.SendColors(changes, current);
             _framesThisSecond++;
             _packetsAccum += _kb.LastPacketCount;
             _sendMsAccum += (_clock.ElapsedTicks - t0) * 1000.0 / Stopwatch.Frequency;
