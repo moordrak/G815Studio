@@ -21,6 +21,59 @@ public sealed class LightingConfig
     public int Brightness = 100;  // 0..100
     public int Direction = 0;     // val: 0 lijevo→desno, 1 desno→lijevo, 2 gore→dolje, 3 iz središta
     public Dictionary<string, string> KeyColors = new();  // KeyDef.Id -> #RRGGBB
+
+    /// <summary>Boje, brzina i smjer posebno za svaki efekt (ključ = naziv efekta).</summary>
+    public Dictionary<string, EffectParams> EffectSettings = new();
+
+    /// <summary>Postavke zadanog efekta; ako ih još nema, stvaraju se iz zadanih vrijednosti tog efekta.</summary>
+    public EffectParams For(EffectType e)
+    {
+        EffectSettings ??= new();
+        string key = e.ToString();
+        if (!EffectSettings.TryGetValue(key, out var p) || p == null)
+        {
+            p = EffectParams.DefaultFor(e, this);
+            EffectSettings[key] = p;
+        }
+        return p;
+    }
+
+    public EffectParams Current => For(Effect);
+}
+
+public sealed class EffectParams
+{
+    public string Color1;
+    public string Color2;
+    public string Background = "#000000";
+    public int Speed = 50;          // 1..100
+    public int Direction;           // 0 lijevo→desno, 1 desno→lijevo, 2 gore→dolje, 3 iz središta
+    public bool Rainbow = true;     // kod efekata s dugom: duga ili vlastite boje (Boja 1 ↔ Boja 2)
+
+    public static EffectParams DefaultFor(EffectType e, LightingConfig legacy)
+    {
+        // stari profili imaju zajedničke boje – za efekte koji su ih koristili zadrži ih
+        string l1 = legacy?.Color1 ?? "#00A0FF", l2 = legacy?.Color2 ?? "#FF2060", lb = legacy?.Background ?? "#000000";
+        int ls = legacy?.Speed ?? 50, ld = legacy?.Direction ?? 0;
+        return e switch
+        {
+            EffectType.Static or EffectType.Breathing => new() { Color1 = l1, Color2 = l2, Background = lb, Speed = ls },
+            EffectType.Reactive or EffectType.Ripple => new() { Color1 = l1, Color2 = l2, Background = lb, Speed = ls },
+            EffectType.Audio => new() { Color1 = "#3DDC84", Color2 = "#FF3B5C", Background = "#000000", Speed = 50 },
+            EffectType.Spectrum => new() { Color1 = "#00C8FF", Color2 = "#FF2A6D", Background = "#000000", Speed = 50 },
+            EffectType.BassPulse => new() { Color1 = "#FF2A6D", Color2 = "#00C8FF", Background = "#000000", Speed = 50 },
+            EffectType.Wave or EffectType.Swirl or EffectType.RadialRainbow or EffectType.ColorCycle
+                => new() { Color1 = "#00C8FF", Color2 = "#B000FF", Speed = ls, Direction = ld, Rainbow = true },
+            EffectType.GradientWave => new() { Color1 = "#00C8FF", Color2 = "#FF2A6D", Speed = 50, Direction = ld, Rainbow = false },
+            EffectType.Starry => new() { Color1 = "#FFFFFF", Color2 = "#7AB8FF", Background = "#000010", Speed = 50 },
+            EffectType.Rain => new() { Color1 = "#00FF66", Color2 = "#C8FFD8", Background = "#000000", Speed = 50 },
+            EffectType.Fire => new() { Color1 = "#FF2000", Color2 = "#FFC830", Background = "#000000", Speed = 50 },
+            EffectType.Visor => new() { Color1 = "#FF0028", Color2 = "#FF0028", Background = "#000000", Speed = 50 },
+            EffectType.Lightning => new() { Color1 = "#DDE8FF", Color2 = "#8A6CFF", Background = "#000000", Speed = 50 },
+            EffectType.Mosaic => new() { Color1 = "#00C8FF", Color2 = "#FF2A6D", Speed = 50, Rainbow = true },
+            _ => new() { Color1 = l1, Color2 = l2, Background = lb, Speed = ls }
+        };
+    }
 }
 
 public enum StepType { KeyPress, KeyDown, KeyUp, Delay, Text, Run, Http, Input }
@@ -99,6 +152,7 @@ public sealed class AppSettings
     public int Fps = 30;
     public bool RecordDelays = true;
     public Dictionary<string, int> ZoneOverrides = new();
+    public int ConfigVersion;
 }
 
 public static class SettingsStore
@@ -144,10 +198,18 @@ public static class SettingsStore
             p.Macros ??= new();
             p.Lighting ??= new();
             p.Lighting.KeyColors ??= new();
+            p.Lighting.EffectSettings ??= new();
             foreach (var m in p.Macros.Values) m.Steps ??= new();
         }
         if (s.Profiles.All(p => p.Name != s.ActiveProfile)) s.ActiveProfile = s.Profiles[0].Name;
         s.Fps = Math.Clamp(s.Fps, 5, 60);
+        if (s.ConfigVersion < 2)
+        {
+            // jednokratno: zone medijskih tipki su sada točne zadane vrijednosti
+            foreach (var id in new[] { "MEDIA_PREV", "MEDIA_PLAY", "MEDIA_NEXT", "MEDIA_MUTE" })
+                s.ZoneOverrides.Remove(id);
+            s.ConfigVersion = 2;
+        }
         return s;
     }
 

@@ -27,7 +27,8 @@ public sealed class MainForm : Form
     private TrackBar _speed, _bright;
     private Button _c1Btn, _c2Btn, _bgBtn, _brushBtn;
     private Color _brush = Color.FromArgb(255, 40, 40);
-    private Label _effectHelp, _selInfo;
+    private Label _effectHelp, _selInfo, _colorsTitle, _colorsNote, _speedLbl, _dirLbl;
+    private CheckBox _rainbowChk;
 
     // makroi
     private readonly RadioButton[] _bankRb = new RadioButton[3];
@@ -51,6 +52,31 @@ public sealed class MainForm : Form
     private Label _devInfo;
     private CheckBox _zoneAuto;
     private readonly System.Windows.Forms.Timer _zoneTimer = new() { Interval = 1000 };
+
+    // koje boje i postavke koristi pojedini efekt (null = ne koristi)
+    private static readonly Dictionary<EffectType, (string C1, string C2, string Bg, bool RainbowOpt, bool Speed, bool Dir, string Note)> Slots = new()
+    {
+        [EffectType.Static] = ("Zadana boja tipki", null, null, false, false, false, "Boje pojedinih tipki mijenjaš kistom."),
+        [EffectType.Breathing] = ("Zadana boja tipki", null, null, false, true, false, "Dišu boje po tipkama; kistom obojene tipke zadržavaju svoju boju."),
+        [EffectType.Wave] = ("Boja 1", "Boja 2", null, true, true, true, null),
+        [EffectType.ColorCycle] = ("Boja 1", "Boja 2", null, true, true, false, null),
+        [EffectType.Reactive] = ("Osnovna boja", "Boja pritiska", null, false, true, false, null),
+        [EffectType.Ripple] = ("Osnovna boja", "Boja vala", null, false, true, false, null),
+        [EffectType.Audio] = ("Sredina (tiho)", "Rubovi (glasno)", "Pozadina", false, true, false, "Brzina = koliko brzo razina pada."),
+        [EffectType.Screen] = (null, null, null, false, false, false, "Boje dolaze sa zaslona."),
+        [EffectType.Off] = (null, null, null, false, false, false, "Sve tipke su ugašene."),
+        [EffectType.Spectrum] = ("Dno stupca", "Vrh stupca", "Pozadina", false, true, false, "Brzina = koliko brzo stupci padaju."),
+        [EffectType.BassPulse] = ("Udarac 1", "Udarac 2", "Pozadina", false, true, false, "Brzina = koliko brzo bljesak nestaje."),
+        [EffectType.Swirl] = ("Boja 1", "Boja 2", null, true, true, false, null),
+        [EffectType.RadialRainbow] = ("Boja 1", "Boja 2", null, true, true, false, null),
+        [EffectType.GradientWave] = ("Boja A", "Boja B", null, false, true, true, null),
+        [EffectType.Starry] = ("Zvijezda 1", "Zvijezda 2", "Nebo", false, true, false, null),
+        [EffectType.Rain] = ("Kapi", "Vrh kapi", "Pozadina", false, true, false, null),
+        [EffectType.Fire] = ("Plamen", "Vrhovi plamena", "Pozadina", false, true, false, null),
+        [EffectType.Visor] = ("Traka", "Trag", "Pozadina", false, true, false, null),
+        [EffectType.Lightning] = ("Munja", "Odsjaj", "Pozadina", false, true, false, null),
+        [EffectType.Mosaic] = ("Boja 1", "Boja 2", null, true, true, false, "Uključena duga = nasumične boje; isključena = nijanse između Boje 1 i Boje 2."),
+    };
 
     private static readonly (EffectType Type, string Name, string Help)[] Effects =
     {
@@ -316,6 +342,7 @@ public sealed class MainForm : Form
             for (int t = 0; t < _tiles.Count; t++) { _tiles[t].Selected = t == _effectCombo.SelectedIndex; _tiles[t].Invalidate(); }
             if (_loading) return;
             P.Lighting.Effect = Effects[_effectCombo.SelectedIndex].Type;
+            LoadEffectParams();
             _c.LightingChanged(P);
         };
         _effectHelp = new Label { AutoSize = false, Width = 530, Height = 40, ForeColor = SystemColors.GrayText };
@@ -361,7 +388,7 @@ public sealed class MainForm : Form
 
         param.Controls.Add(Ui.Lbl("Brzina"));
         _speed = new TrackBar { Minimum = 1, Maximum = 100, TickFrequency = 10, Width = 280, TickStyle = TickStyle.None };
-        _speed.ValueChanged += (_, _) => { if (_loading) return; P.Lighting.Speed = _speed.Value; _c.LightingChanged(P); };
+        _speed.ValueChanged += (_, _) => { if (_loading) return; P.Lighting.Current.Speed = _speed.Value; _c.LightingChanged(P); };
         param.Controls.Add(_speed);
 
         param.Controls.Add(Ui.Lbl("Svjetlina"));
@@ -372,19 +399,32 @@ public sealed class MainForm : Form
         param.Controls.Add(Ui.Lbl("Smjer vala"));
         _dirCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
         _dirCombo.Items.AddRange(new object[] { "Lijevo → desno", "Desno → lijevo", "Gore → dolje", "Iz središta" });
-        _dirCombo.SelectedIndexChanged += (_, _) => { if (_loading) return; P.Lighting.Direction = _dirCombo.SelectedIndex; _c.LightingChanged(P); };
+        _dirCombo.SelectedIndexChanged += (_, _) => { if (_loading) return; P.Lighting.Current.Direction = _dirCombo.SelectedIndex; _c.LightingChanged(P); };
         param.Controls.Add(_dirCombo);
         controls.Controls.Add(Ui.Group("Efekt", fx));
         controls.Controls.Add(Ui.Group("Parametri", param));
 
         // --- boje efekta
         var cols = Ui.Flow(FlowDirection.TopDown);
-        _c1Btn = Ui.Btn("Boja 1 (zadana boja tipki)", (_, _) => PickConfigColor(1), 220);
-        _c2Btn = Ui.Btn("Boja 2 (pritisak / vrh)", (_, _) => PickConfigColor(2), 220);
-        _bgBtn = Ui.Btn("Pozadina", (_, _) => PickConfigColor(3), 220);
+        _colorsTitle = new Label { AutoSize = true, Font = Theme.UiFont(10f, FontStyle.Bold), ForeColor = Theme.Text, Margin = new Padding(3, 0, 3, 8) };
+        _rainbowChk = new CheckBox { Text = "Duga (isključi za vlastite boje)", AutoSize = true, Margin = new Padding(3, 2, 3, 8) };
+        _rainbowChk.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            P.Lighting.Current.Rainbow = _rainbowChk.Checked;
+            UpdateColorButtons();
+            _c.LightingChanged(P);
+        };
+        _c1Btn = Ui.Btn("Boja 1", (_, _) => PickConfigColor(1), 250);
+        _c2Btn = Ui.Btn("Boja 2", (_, _) => PickConfigColor(2), 250);
+        _bgBtn = Ui.Btn("Pozadina", (_, _) => PickConfigColor(3), 250);
+        _colorsNote = new Label { AutoSize = true, MaximumSize = new Size(250, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 0) };
+        cols.Controls.Add(_colorsTitle);
+        cols.Controls.Add(_rainbowChk);
         cols.Controls.Add(_c1Btn);
         cols.Controls.Add(_c2Btn);
         cols.Controls.Add(_bgBtn);
+        cols.Controls.Add(_colorsNote);
         controls.Controls.Add(Ui.Group("Boje efekta", cols));
 
         // --- bojanje tipki
@@ -735,13 +775,8 @@ public sealed class MainForm : Form
             int fi = Array.FindIndex(Effects, e => e.Type == L.Effect);
             _effectCombo.SelectedIndex = Math.Max(0, fi);
             _effectHelp.Text = Effects[_effectCombo.SelectedIndex].Help;
-            _speed.Value = Math.Clamp(L.Speed, _speed.Minimum, _speed.Maximum);
             _bright.Value = Math.Clamp(L.Brightness, _bright.Minimum, _bright.Maximum);
-            _dirCombo.SelectedIndex = Math.Clamp(L.Direction, 0, 3);
-            _dirCombo.Enabled = L.Effect is EffectType.Wave or EffectType.GradientWave;
-            Ui.PaintSwatch(_c1Btn, ColorUtil.Parse(L.Color1));
-            Ui.PaintSwatch(_c2Btn, ColorUtil.Parse(L.Color2));
-            Ui.PaintSwatch(_bgBtn, ColorUtil.Parse(L.Background));
+            LoadEffectParams();
 
             _recDelays.Checked = _c.Settings.RecordDelays;
             _bankRb[_editBank - 1].Checked = true;
@@ -858,15 +893,64 @@ public sealed class MainForm : Form
 
     private void PickConfigColor(int which)
     {
-        var L = P.Lighting;
-        string cur = which == 1 ? L.Color1 : which == 2 ? L.Color2 : L.Background;
+        var ep = P.Lighting.Current;
+        string cur = which == 1 ? ep.Color1 : which == 2 ? ep.Color2 : ep.Background;
         var c = Ui.PickColor(this, ColorUtil.Parse(cur));
         if (!c.HasValue) return;
         string hex = ColorUtil.ToHex(c.Value);
-        if (which == 1) { L.Color1 = hex; Ui.PaintSwatch(_c1Btn, c.Value); }
-        else if (which == 2) { L.Color2 = hex; Ui.PaintSwatch(_c2Btn, c.Value); }
-        else { L.Background = hex; Ui.PaintSwatch(_bgBtn, c.Value); }
+        if (which == 1) ep.Color1 = hex;
+        else if (which == 2) ep.Color2 = hex;
+        else ep.Background = hex;
+        UpdateColorButtons();
         _c.LightingChanged(P);
+    }
+
+    /// <summary>Učitava boje, brzinu i smjer odabranog efekta u kontrole (svaki efekt ima svoje).</summary>
+    private void LoadEffectParams()
+    {
+        var L = P.Lighting;
+        var ep = L.Current;
+        var slot = Slots.TryGetValue(L.Effect, out var sl) ? sl : ("Boja 1", "Boja 2", "Pozadina", false, true, false, null);
+        bool was = _loading;
+        _loading = true;
+        try
+        {
+            string name = Effects.FirstOrDefault(e => e.Type == L.Effect).Name ?? L.Effect.ToString();
+            _colorsTitle.Text = name;
+            _rainbowChk.Visible = slot.RainbowOpt;
+            _rainbowChk.Checked = ep.Rainbow;
+            _speed.Value = Math.Clamp(ep.Speed, _speed.Minimum, _speed.Maximum);
+            _speed.Enabled = slot.Speed;
+            _dirCombo.SelectedIndex = Math.Clamp(ep.Direction, 0, 3);
+            _dirCombo.Enabled = slot.Dir;
+            _colorsNote.Text = slot.Note ?? "";
+            _colorsNote.Visible = !string.IsNullOrEmpty(slot.Note);
+        }
+        finally
+        {
+            _loading = was;
+        }
+        UpdateColorButtons();
+    }
+
+    private void UpdateColorButtons()
+    {
+        var L = P.Lighting;
+        var ep = L.Current;
+        var slot = Slots.TryGetValue(L.Effect, out var sl) ? sl : ("Boja 1", "Boja 2", "Pozadina", false, true, false, null);
+        bool custom = !slot.RainbowOpt || !ep.Rainbow;
+        void Set(Button b, string label, string hex, bool enabled)
+        {
+            b.Visible = label != null;
+            if (label == null) return;
+            b.Text = label;
+            b.Enabled = enabled;
+            Ui.PaintSwatch(b, enabled ? ColorUtil.Parse(hex) : Theme.ControlBg);
+            if (!enabled) b.ForeColor = Theme.Muted;
+        }
+        Set(_c1Btn, slot.C1, ep.Color1, custom);
+        Set(_c2Btn, slot.C2, ep.Color2, custom);
+        Set(_bgBtn, slot.Bg, ep.Background, true);
     }
 
     private void PaintSelected(Color? color)

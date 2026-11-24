@@ -58,10 +58,14 @@ public sealed class EffectRenderer : IDisposable
     public void Render(LightingConfig cfg, LightKey[] keys, Color[] baseColors, double t, Color[] frame)
     {
         _frameNo++;
-        var c1 = ColorUtil.Parse(cfg.Color1, Color.DeepSkyBlue);
-        var c2 = ColorUtil.Parse(cfg.Color2, Color.Red);
-        var bg = ColorUtil.Parse(cfg.Background, Color.Black);
-        double speed = Math.Clamp(cfg.Speed, 1, 100) / 50.0;   // 0.02 .. 2
+        var ep = cfg.Current;                                    // boje i brzina ovog efekta
+        var c1 = ColorUtil.Parse(ep.Color1, Color.DeepSkyBlue);
+        var c2 = ColorUtil.Parse(ep.Color2, Color.Red);
+        var bg = ColorUtil.Parse(ep.Background, Color.Black);
+        double speed = Math.Clamp(ep.Speed, 1, 100) / 50.0;    // 0.02 .. 2
+        // "duga" ili vlastite boje: h ide 0..1 kroz Boju 1 → Boju 2 → natrag
+        Color Pal(double h) => ep.Rainbow ? ColorUtil.Hsv(h, 1, 1)
+            : ColorUtil.Lerp(c1, c2, 0.5 - 0.5 * Math.Cos(2 * Math.PI * (h - Math.Floor(h))));
 
         if (cfg.Effect != EffectType.Audio) { _audio?.Dispose(); _audio = null; }
         if (!IsAudioEffect(cfg.Effect)) { _analyzer?.Dispose(); _analyzer = null; }
@@ -100,7 +104,7 @@ public sealed class EffectRenderer : IDisposable
 
             case EffectType.ColorCycle:
             {
-                var c = ColorUtil.Hsv(t * 0.08 * speed, 1, 1);
+                var c = Pal(t * 0.08 * speed);
                 foreach (var key in keys) frame[key.Zone] = c;
                 break;
             }
@@ -108,14 +112,14 @@ public sealed class EffectRenderer : IDisposable
             case EffectType.Wave:
                 foreach (var key in keys)
                 {
-                    double pos = cfg.Direction switch
+                    double pos = ep.Direction switch
                     {
                         1 => 1 - key.NX,
                         2 => key.NY * 0.35,
                         3 => Math.Sqrt(Math.Pow(key.NX - 0.5, 2) + Math.Pow((key.NY - 0.5) * 0.35, 2)),
                         _ => key.NX
                     };
-                    frame[key.Zone] = ColorUtil.Hsv(pos - t * 0.25 * speed, 1, 1);
+                    frame[key.Zone] = Pal(pos - t * 0.25 * speed);
                 }
                 break;
 
@@ -190,7 +194,7 @@ public sealed class EffectRenderer : IDisposable
                 double fall = dt * Math.Clamp(2.2 * speed, 0.4, 6);
                 for (int b2 = 0; b2 < _bands.Length; b2++)
                     _bandHold[b2] = (float)Math.Max(_bands[b2], _bandHold[b2] - fall);
-                const int rows = 6;
+                const int rows = 7;
                 foreach (var key in keys)
                 {
                     int band = Math.Clamp((int)(key.NX * _bands.Length), 0, _bands.Length - 1);
@@ -231,7 +235,7 @@ public sealed class EffectRenderer : IDisposable
                 foreach (var key in keys)
                 {
                     double ang = Math.Atan2(key.UY - cy, key.UX - cx) / (2 * Math.PI);
-                    frame[key.Zone] = ColorUtil.Hsv(ang + t * 0.15 * speed, 1, 1);
+                    frame[key.Zone] = Pal(ang + t * 0.15 * speed);
                 }
                 break;
             }
@@ -242,7 +246,7 @@ public sealed class EffectRenderer : IDisposable
                 foreach (var key in keys)
                 {
                     double d = Math.Sqrt(Math.Pow(key.UX - cx, 2) + Math.Pow(key.UY - cy, 2));
-                    frame[key.Zone] = ColorUtil.Hsv(d / 14.0 - t * 0.25 * speed, 1, 1);
+                    frame[key.Zone] = Pal(d / 14.0 - t * 0.25 * speed);
                 }
                 break;
             }
@@ -250,7 +254,7 @@ public sealed class EffectRenderer : IDisposable
             case EffectType.GradientWave:
                 foreach (var key in keys)
                 {
-                    double pos = cfg.Direction switch { 1 => 1 - key.NX, 2 => key.NY, 3 => Math.Abs(key.NX - 0.5) * 2, _ => key.NX };
+                    double pos = ep.Direction switch { 1 => 1 - key.NX, 2 => key.NY, 3 => Math.Abs(key.NX - 0.5) * 2, _ => key.NX };
                     double k = 0.5 + 0.5 * Math.Sin(2 * Math.PI * (pos - t * 0.25 * speed));
                     frame[key.Zone] = ColorUtil.Lerp(c1, c2, k);
                 }
@@ -313,7 +317,7 @@ public sealed class EffectRenderer : IDisposable
                         double k = behind < 0.5 ? 1 : 1 - (behind - 0.5) / (trail - 0.5);
                         if (k > best) best = k;
                     }
-                    var head = best > 0.95 ? ColorUtil.Lerp(c1, Color.White, 0.5) : c1;
+                    var head = best > 0.95 ? c2 : c1;
                     frame[key.Zone] = ColorUtil.Lerp(bg, head, Math.Round(best * 8) / 8);
                 }
                 break;
@@ -325,9 +329,9 @@ public sealed class EffectRenderer : IDisposable
                 foreach (var key in keys)
                 {
                     double n = Noise(key.UX * 0.55, key.UY * 0.5 + t * 2.2 * speed);
-                    double heat = Math.Clamp(key.NY * 1.15 - 0.45 + n * 0.75, 0, 1);
+                    double heat = Math.Clamp(key.NY * 0.95 - 0.2 + n * 0.75, 0, 1);
                     heat = Math.Round(heat * 12) / 12;
-                    frame[key.Zone] = FireColor(heat);
+                    frame[key.Zone] = FireColor(heat, bg, c1, c2);
                 }
                 break;
             }
@@ -341,7 +345,7 @@ public sealed class EffectRenderer : IDisposable
                 {
                     double d = key.NX - p;
                     double k = Math.Abs(d) < 0.04 ? 1 : (Math.Sign(d) == -Math.Sign(dir) ? Math.Max(0, 1 - (Math.Abs(d) - 0.04) / 0.25) : Math.Max(0, 1 - (Math.Abs(d) - 0.04) / 0.05));
-                    frame[key.Zone] = ColorUtil.Lerp(bg, c1, Math.Round(k * 10) / 10);
+                    frame[key.Zone] = k >= 0.999 ? c1 : ColorUtil.Lerp(bg, c2, Math.Round(k * 10) / 10);
                 }
                 break;
             }
@@ -355,10 +359,13 @@ public sealed class EffectRenderer : IDisposable
                     _flashDur = 0.15 + _rnd.NextDouble() * 0.35;
                 }
                 double age = t - _flashT;
-                double k = 0;
+                double k = 0, flick = 0;
                 if (age >= 0 && age < _flashDur)
-                    k = (1 - age / _flashDur) * (0.6 + 0.4 * Math.Abs(Math.Sin(age * 60)));
-                var col = ColorUtil.Lerp(bg, c1, Math.Round(k * 12) / 12);
+                {
+                    flick = Math.Abs(Math.Sin(age * 60));
+                    k = (1 - age / _flashDur) * (0.6 + 0.4 * flick);
+                }
+                var col = ColorUtil.Lerp(bg, ColorUtil.Lerp(c2, c1, flick), Math.Round(k * 12) / 12);
                 foreach (var key in keys) frame[key.Zone] = col;
                 break;
             }
@@ -373,7 +380,9 @@ public sealed class EffectRenderer : IDisposable
                     if (t - _keyA[i] > hold + _keyB[i] * hold)
                     {
                         _keyFrom[i] = ColorUtil.Lerp(_keyFrom[i], _keyTo[i], 1);
-                        _keyTo[i] = ColorUtil.Hsv(_rnd.NextDouble(), 0.85 + _rnd.NextDouble() * 0.15, 1);
+                        _keyTo[i] = ep.Rainbow
+                            ? ColorUtil.Hsv(_rnd.NextDouble(), 0.85 + _rnd.NextDouble() * 0.15, 1)
+                            : ColorUtil.Lerp(c1, c2, _rnd.NextDouble());
                         _keyA[i] = t;
                         _keyB[i] = _rnd.NextDouble();
                     }
@@ -409,13 +418,11 @@ public sealed class EffectRenderer : IDisposable
         return a;
     }
 
-    private static Color FireColor(double h)
+    private static Color FireColor(double h, Color bg, Color baseFlame, Color tips)
     {
-        // crna → tamnocrvena → crvena → narančasta → žuta
-        if (h < 0.25) return ColorUtil.Lerp(Color.Black, Color.FromArgb(90, 0, 0), h / 0.25);
-        if (h < 0.5) return ColorUtil.Lerp(Color.FromArgb(90, 0, 0), Color.FromArgb(255, 30, 0), (h - 0.25) / 0.25);
-        if (h < 0.8) return ColorUtil.Lerp(Color.FromArgb(255, 30, 0), Color.FromArgb(255, 130, 0), (h - 0.5) / 0.3);
-        return ColorUtil.Lerp(Color.FromArgb(255, 130, 0), Color.FromArgb(255, 220, 60), (h - 0.8) / 0.2);
+        // pozadina → plamen (Boja 1) → vrhovi plamena (Boja 2)
+        if (h < 0.5) return ColorUtil.Lerp(bg, baseFlame, h / 0.5);
+        return ColorUtil.Lerp(baseFlame, tips, (h - 0.5) / 0.5);
     }
 
     // glatki 2D šum vrijednosti (0..1)
@@ -513,8 +520,9 @@ public sealed class LightingEngine : IDisposable
     public void SetKeys(IEnumerable<KeyDef> defs)
     {
         var list = defs.ToList();
-        float maxX = Math.Max(1, list.Max(k => k.CenterX));
-        float maxY = Math.Max(1, list.Max(k => k.CenterY));
+        float minX = list.Min(k => k.CenterX), minY = list.Min(k => k.CenterY);
+        float spanX = Math.Max(1, list.Max(k => k.CenterX) - minX);
+        float spanY = Math.Max(1, list.Max(k => k.CenterY) - minY);
         lock (_lock)
         {
             _keys = list.Select(k => new LightKey
@@ -523,8 +531,8 @@ public sealed class LightingEngine : IDisposable
                 Zone = k.Zone,
                 UX = k.CenterX,
                 UY = k.CenterY,
-                NX = k.CenterX / maxX,
-                NY = k.CenterY / maxY
+                NX = (k.CenterX - minX) / spanX,
+                NY = (k.CenterY - minY) / spanY
             }).ToArray();
             RebuildBase();
         }
@@ -533,7 +541,9 @@ public sealed class LightingEngine : IDisposable
 
     private void RebuildBase()
     {
-        var c1 = ColorUtil.Parse(_cfg.Color1, Color.DeepSkyBlue);
+        var e = _cfg.Effect is EffectType.Static or EffectType.Breathing or EffectType.Reactive or EffectType.Ripple
+            ? _cfg.Effect : EffectType.Static;
+        var c1 = ColorUtil.Parse(_cfg.For(e).Color1, Color.DeepSkyBlue);
         var map = _cfg.KeyColors ?? new Dictionary<string, string>();
         _base = _keys.Select(k => map.TryGetValue(k.Id, out var h) ? ColorUtil.Parse(h, c1) : c1).ToArray();
     }
