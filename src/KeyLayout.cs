@@ -163,7 +163,7 @@ public static class KeyLayouts
         {
             Id = id, Label = label, DefaultZone = zone, Zone = zone, X = ox + x, Y = y, W = 1, H = 1, Group = group, Shape = "round"
         });
-        R("GAME", "Način za igre", 0x9A, 6.5f, 0.3f, "top");
+        // tipka za igre ima samo bijelu lampicu (zona 0x9A tipkovnica odbija), pa nije RGB tipka
         R("BRIGHT", "Svjetlina", 0x99, 7.5f, 0.3f, "top");
         R("MEDIA_PREV", "Prethodna", 0x9E, 18.5f, oy, "media");
         R("MEDIA_PLAY", "Play/Pauza", 0x9B, 19.5f, oy, "media");

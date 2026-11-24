@@ -27,7 +27,7 @@ public sealed class LogitechMouse : IDisposable
     private int[] _desired = Array.Empty<int>();
     private Thread _thread;
     private volatile bool _stop;
-    private byte _persist;           // 0 = privremeno; 1 samo ako uređaj odbije 0
+    private byte _persist = 0x01;    // zastavice: bit 0 = VOLATILE (RAM), bit 1 = NON_VOLATILE; puna snaga
     private DateTime _lastReclaim;
 
     public bool IsConnected => _dev != null;
@@ -116,7 +116,7 @@ public sealed class LogitechMouse : IDisposable
         _clusters.Clear();
         _feat = feat;
         _v8071 = v8071;
-        _persist = 0;
+        _persist = 0x01;
         int count;
         if (v8071)
         {
@@ -174,7 +174,8 @@ public sealed class LogitechMouse : IDisposable
     /// <summary>Preuzimanje softverske kontrole nad RGB efektima (kao OpenRGB: [01 03 05]).</summary>
     private void ClaimSoftwareControl(HidppDevice dev)
     {
-        foreach (var args in new[] { new byte[] { 0x01, 0x03, 0x05 }, new byte[] { 0x01, 0x01, 0x00 } })
+        // [0x01 = upiši, kontrola: 0x01 ALL_CLUSTERS (samo boje, ne i napajanje), događaji: 0]
+        foreach (var args in new[] { new byte[] { 0x01, 0x01, 0x00 }, new byte[] { 0x01, 0x03, 0x00 } })
         {
             try
             {
@@ -216,7 +217,7 @@ public sealed class LogitechMouse : IDisposable
         int failures = 0;
         while (!_stop)
         {
-            Thread.Sleep(_persist == 0 ? 33 : 250);   // najviše ~30 promjena u sekundi
+            Thread.Sleep(33);   // najviše ~30 promjena u sekundi
             HidppDevice dev;
             Cluster[] clusters;
             int[] desired;
@@ -246,11 +247,12 @@ public sealed class LogitechMouse : IDisposable
                 }
                 failures = 0;
             }
-            catch (HidppException ex) when (ex.ErrorCode == 0x02 && _persist == 0)
+            catch (HidppException ex) when (ex.ErrorCode == 0x05 || ex.ErrorCode == 0x02)
             {
-                // uređaj ne prihvaća privremenu promjenu – koristi trajnu, ali rjeđe
-                _persist = 1;
-                Log.Write("Miš: privremena promjena odbijena, koristim trajnu (rjeđe slanje).");
+                // "nije dopušteno" – miš je izgubio softversku kontrolu (npr. nakon spavanja)
+                Log.Write("Miš: postavljanje boje odbijeno (" + ex.Message + "), ponovno preuzimam kontrolu.");
+                _lastReclaim = DateTime.MinValue;
+                Thread.Sleep(300);
             }
             catch (Exception ex)
             {
@@ -274,7 +276,7 @@ public sealed class LogitechMouse : IDisposable
         a[2] = (byte)(rgb >> 16);
         a[3] = (byte)(rgb >> 8);
         a[4] = (byte)rgb;
-        a[12] = _persist;
+        a[12] = _persist;   // 0x01 = privremeno (RAM), puna snaga
         var r = dev.Request(_feat, (byte)(_v8071 ? 1 : 3), a, 300);
         if (!_loggedSet)
         {

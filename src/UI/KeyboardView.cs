@@ -371,7 +371,7 @@ public sealed class KeyboardView : Control
         Add("U3B", RoundKind.Text, "M2", 2, topY);
         Add("U3C", RoundKind.Text, "M3", 3, topY);
         Add("U3D", RoundKind.Text, "MR", 0, topY);
-        Add("U3E", RoundKind.Game, null, -1, topY, "GAME");
+        Add("U3E", RoundKind.Game, null, -1, topY);
         Add("U3F", RoundKind.Light, null, -1, topY, "BRIGHT");
 
         var pause = Find("U48");

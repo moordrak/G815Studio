@@ -605,7 +605,7 @@ public sealed class LightingEngine : IDisposable
             try
             {
                 int test = TestZone;
-                if (test >= 0 && test < 256)
+                if (test >= 0 && test < 0xF0)
                 {
                     _frame[test] = Color.White;
                     _everUsed[test] = true;
@@ -647,7 +647,9 @@ public sealed class LightingEngine : IDisposable
 
     private void Send(LightKey[] keys)
     {
-        foreach (var k in keys) if (!_mouseZone[k.Zone]) _everUsed[k.Zone] = true;
+        // zone 0xF0+ su virtualne zone miša i nikad ne idu tipkovnici
+        foreach (var k in keys) if (!_mouseZone[k.Zone] && k.Zone < 0xF0) _everUsed[k.Zone] = true;
+        for (int z = 0xF0; z < 256; z++) _everUsed[z] = false;
 
         var changes = new List<(byte Zone, Color Color)>();
         lock (_sentValid)

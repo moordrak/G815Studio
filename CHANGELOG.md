@@ -1,5 +1,9 @@
 # Popis promjena
 
+## v1.6.3
+- **Miš:** boja se sada stvarno postavlja. Naredba za boju šalje zastavicu „privremeno (RAM)“ (prije 0, pa ju je miš ignorirao), a preuzima se samo upravljanje bojama, ne i napajanjem. Kad miš nakon spavanja odbije boju, kontrola se odmah ponovno preuzima.
+- **Tipkovnica:** uklonjene dvije zone zbog kojih je odbijala cijele pakete boja (greška 0x02): tipka za igre (ima samo bijelu lampicu, nije RGB) i virtualna zona miša koja je mogla procuriti u pakete tipkovnice.
+
 ## v1.6.2
 - Miš: nova opcija *Potpuna kontrola (host način)* za miševe kod kojih ugrađeni profil prepisuje boju; detaljniji zapis odgovora miša u logu.
 - Tipkovnica: prazna mjesta u malim paketima boja pune se drugim stvarnim tipkama (G815 odbija i nule i ponavljanje iste tipke); log kod greške navodi zone odbijenog paketa.
