@@ -235,7 +235,8 @@ public sealed class G815Keyboard : IDisposable
                     var a = new byte[16];
                     a[0] = col.R; a[1] = col.G; a[2] = col.B;
                     int n = Math.Min(13, list.Count - i);
-                    for (int j = 0; j < n; j++) a[3 + j] = list[i + j].Zone;
+                    // neiskorištena mjesta: ponovi zadnju tipku (zona 0 ne postoji i tipkovnica bi odbila paket)
+                    for (int j = 0; j < 13; j++) a[3 + j] = list[i + Math.Min(j, n - 1)].Zone;
                     packets.Add((6, a));
                 }
             }
@@ -248,9 +249,11 @@ public sealed class G815Keyboard : IDisposable
         {
             var a = new byte[16];
             int n = Math.Min(4, singles.Count - i);
-            for (int j = 0; j < n; j++)
+            // mali paket uvijek ima 4 unosa: neiskorištene popuni ponavljanjem zadnje tipke
+            // (s nulama tipkovnica vraća grešku 0x02 i odbaci cijeli paket)
+            for (int j = 0; j < 4; j++)
             {
-                var (zone, col) = singles[i + j];
+                var (zone, col) = singles[i + Math.Min(j, n - 1)];
                 a[j * 4] = zone;
                 a[j * 4 + 1] = col.R;
                 a[j * 4 + 2] = col.G;
@@ -299,10 +302,19 @@ public sealed class G815Keyboard : IDisposable
     private int _busyInFrame;
     private DateTime _paceUntil;
 
+    private readonly Dictionary<int, DateTime> _errLogged = new();
+
     private void OnDeviceError(byte feature, byte fnSw, byte code)
     {
-        if (feature == _perKey && code == 0x08) Interlocked.Increment(ref _busyInFrame);
-        else Log.Write($"HID++ greška 0x{code:X2} (značajka 0x{feature:X2}, funkcija 0x{fnSw:X2})");
+        if (feature == _perKey && code == 0x08) { Interlocked.Increment(ref _busyInFrame); return; }
+        // istu grešku zapiši najviše jednom u minuti (da log ne naraste)
+        int key = (feature << 16) | (fnSw << 8) | code;
+        lock (_errLogged)
+        {
+            if (_errLogged.TryGetValue(key, out var last) && (DateTime.UtcNow - last).TotalSeconds < 60) return;
+            _errLogged[key] = DateTime.UtcNow;
+        }
+        Log.Write($"HID++ greška 0x{code:X2} (značajka 0x{feature:X2}, funkcija 0x{fnSw:X2})");
     }
 
     private static byte[] Filled16()

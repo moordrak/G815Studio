@@ -1,5 +1,9 @@
 # Popis promjena
 
+## v1.6.1
+- Ispravljeno: tipkovnica je odbijala male pakete boja (greška 0x02) kad nisu bili puni, pa se neke tipke nisu osvježavale. Neiskorištena mjesta sada se popunjavaju ponavljanjem zadnje tipke.
+- Ista HID++ greška zapisuje se u log najviše jednom u minuti.
+
 ## v1.6.0
 - **Osvjetljenje Logitech miša** (npr. G502 X PLUS), preko LIGHTSPEED prijamnika ili kabela: miš prati efekt tipkovnice (nalazi se desno od numeričke, pa val, vatra i spektar prelaze i na njega) ili svijetli jednom bojom. Uključuje se u *Postavke → Miš*.
 - DPI i tipke miša ostaju kako su namješteni u samom mišu; kod izlaza miš dobiva natrag svoje efekte.
