@@ -129,6 +129,7 @@ public sealed class LogitechMouse : IDisposable
             count = info.Length > 0 ? info[0] : 0;
         }
 
+        LogFeatures(dev);
         for (byte c = 0; c < count && c < 8; c++)
         {
             byte[] zi = v8071
@@ -138,15 +139,18 @@ public sealed class LogitechMouse : IDisposable
             ushort loc = (ushort)((zi[off] << 8) | zi[off + 1]);
             int effects = zi[off + 2];
             int staticIdx = -1;
+            var ids = new List<string>();
             for (byte e = 0; e < effects && e < 32; e++)
             {
                 byte[] ei = v8071
                     ? dev.Request(feat, 0, new byte[] { c, e, 0x00 }, 500)
                     : dev.Request(feat, 2, new byte[] { c, e }, 500);
                 ushort id = (ushort)((ei[2] << 8) | ei[3]);
-                if (id == StaticEffectId) { staticIdx = e; break; }
+                ids.Add($"0x{id:X2}");
+                if (id == StaticEffectId && staticIdx < 0) staticIdx = e;
             }
-            Log.Write($"Miš: zona {c}, lokacija 0x{loc:X4}, efekata {effects}, statični indeks {staticIdx}");
+            Log.Write($"Miš: zona {c}, lokacija 0x{loc:X4}, efekata {effects} [{string.Join(", ", ids)}], statični indeks {staticIdx}, " +
+                      $"više LED-ica (bajt 7): {(zi.Length > 7 ? zi[7] : 0)}, info {Hex(zi)}");
             if (staticIdx >= 0)
                 _clusters.Add(new Cluster { Index = c, Location = loc, StaticEffectIndex = (byte)staticIdx });
         }
@@ -286,6 +290,31 @@ public sealed class LogitechMouse : IDisposable
     }
 
     private bool _loggedSet;
+    private static bool _featuresLogged;
+
+    /// <summary>Jednom zapiše sve HID++ značajke miša (FeatureSet 0x0001) – za procjenu što još podržava.</summary>
+    private static void LogFeatures(HidppDevice dev)
+    {
+        if (_featuresLogged) return;
+        _featuresLogged = true;
+        try
+        {
+            byte fs = dev.GetFeatureIndex(0x0001, 400);
+            if (fs == 0) return;
+            int n = dev.Request(fs, 0, Array.Empty<byte>(), 400)[0];
+            var list = new List<string>();
+            for (int i = 1; i <= n; i++)
+            {
+                var r = dev.Request(fs, 1, new[] { (byte)i }, 400);
+                list.Add($"{i:X2}:{(r[0] << 8) | r[1]:X4}");
+            }
+            Log.Write("Miš – značajke (indeks:ID): " + string.Join(" ", list));
+        }
+        catch (Exception ex)
+        {
+            Log.Write("Miš – popis značajki nije uspio: " + ex.Message);
+        }
+    }
 
     private static string Hex(byte[] r) => r == null ? "-" : BitConverter.ToString(r.Take(8).ToArray());
 

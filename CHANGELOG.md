@@ -1,5 +1,9 @@
 # Popis promjena
 
+## v1.6.4
+- **Tipkovnica:** veliki paketi boja šalju se samo puni (13 tipki); ostatak ide malim paketima popunjenima drugim tipkama. Time nestaju i zadnje greške 0x02.
+- **Miš:** u log se zapisuju sve HID++ značajke miša i popis njegovih ugrađenih efekata (za procjenu upravljanja pojedinim LED-icama).
+
 ## v1.6.3
 - **Miš:** boja se sada stvarno postavlja. Naredba za boju šalje zastavicu „privremeno (RAM)“ (prije 0, pa ju je miš ignorirao), a preuzima se samo upravljanje bojama, ne i napajanjem. Kad miš nakon spavanja odbije boju, kontrola se odmah ponovno preuzima.
 - **Tipkovnica:** uklonjene dvije zone zbog kojih je odbijala cijele pakete boja (greška 0x02): tipka za igre (ima samo bijelu lampicu, nije RGB) i virtualna zona miša koja je mogla procuriti u pakete tipkovnice.

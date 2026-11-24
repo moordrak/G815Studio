@@ -230,22 +230,17 @@ public sealed class G815Keyboard : IDisposable
         foreach (var group in changes.GroupBy(c => ColorUtil.Rgb(c.Color)))
         {
             var list = group.ToList();
-            if (list.Count >= 4)
+            // veliki paket samo pun (13 tipki): G815 odbija i nule i ponavljanje na praznim mjestima
+            int full = list.Count / 13 * 13;
+            var col = list[0].Color;
+            for (int i = 0; i < full; i += 13)
             {
-                var col = list[0].Color;
-                for (int i = 0; i < list.Count; i += 13)
-                {
-                    var a = new byte[16];
-                    a[0] = col.R; a[1] = col.G; a[2] = col.B;
-                    int n = Math.Min(13, list.Count - i);
-                    for (int j = 0; j < n; j++) a[3 + j] = list[i + j].Zone;
-                    packets.Add((6, a));
-                }
+                var a = new byte[16];
+                a[0] = col.R; a[1] = col.G; a[2] = col.B;
+                for (int j = 0; j < 13; j++) a[3 + j] = list[i + j].Zone;
+                packets.Add((6, a));
             }
-            else
-            {
-                singles.AddRange(list);
-            }
+            singles.AddRange(list.Skip(full));
         }
 
         if (singles.Count % 4 != 0 && current != null)
