@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths: ['src/UI/**']
 
+permissions:
+  contents: write
+
 jobs:
   screenshots:
     runs-on: windows-latest
@@ -19,10 +22,18 @@ jobs:
       - name: Snimke zaslona
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath "publish\G815Studio.exe" -ArgumentList "--screenshots","shots" -PassThru
+          $p = Start-Process -FilePath "publish\G815Studio.exe" -ArgumentList "--screenshots","docs\screenshots" -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill(); Write-Error "Isteklo vrijeme" }
-          Get-ChildItem shots
-      - uses: actions/upload-artifact@v4
-        with:
-          name: screenshots
-          path: shots/
+          Get-ChildItem docs\screenshots
+      - name: Spremi slike u repozitorij
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Snimke zaslona za README [skip ci]"
+            git pull --rebase
+            git push
+          }
