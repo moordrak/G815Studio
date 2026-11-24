@@ -1,5 +1,9 @@
 # Popis promjena
 
+## v1.7.1
+- Tipkovnica: ako ipak odbije neki paket boja (greška 0x02), sve se boje odmah ponovno pošalju, pa nijedna tipka ne ostane neosvježena.
+- Miš: dok spava, u log se zapisuje samo prvi neuspjeli pokušaj preuzimanja kontrole, a ne svaki.
+
 ## v1.7.0
 - **Miš – svaka LED-ica posebno:** ako miš ima značajku 0x8081 (npr. G502 X PLUS s 8 LED-ica), program upravlja svakom LED-icom zasebno. U načinu „Prati efekt tipkovnice“ LED-ice su složene u stupac desno od numeričke tipkovnice, pa se val, vatra, spektar i ostali efekti vide i po dužini miša.
 

@@ -310,6 +310,10 @@ public sealed class G815Keyboard : IDisposable
     }
 
     private int _busyInFrame;
+    private int _resendRequested;
+
+    /// <summary>True (jednom) ako je tipkovnica odbila neki paket pa treba ponovno poslati sve boje.</summary>
+    public bool TakeResendRequest() => Interlocked.Exchange(ref _resendRequested, 0) == 1;
     private DateTime _paceUntil;
 
     private readonly Dictionary<int, DateTime> _errLogged = new();
@@ -332,6 +336,8 @@ public sealed class G815Keyboard : IDisposable
     private void OnDeviceError(byte feature, byte fnSw, byte code)
     {
         if (feature == _perKey && code == 0x08) { Interlocked.Increment(ref _busyInFrame); return; }
+        // odbijen paket boja: tipke iz njega nisu osvježene → zatraži ponovno slanje svega (rijetko)
+        if (feature == _perKey && code == 0x02) Interlocked.Exchange(ref _resendRequested, 1);
         // istu grešku zapiši najviše jednom u minuti (da log ne naraste)
         int key = (feature << 16) | (fnSw << 8) | code;
         lock (_errLogged)

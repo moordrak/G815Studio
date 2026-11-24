@@ -192,16 +192,27 @@ public sealed class LogitechMouse : IDisposable
             try
             {
                 var r = dev.Request(_feat, 5, args, 400);
-                if ((DateTime.UtcNow - _lastReclaim).TotalSeconds > 60)
+                if ((DateTime.UtcNow - _lastReclaim).TotalSeconds > 60 || _claimFailLogged)
                     Log.Write($"Miš: softverska kontrola {BitConverter.ToString(args)} → {Hex(r)}");
                 _lastReclaim = DateTime.UtcNow;
+                ClaimDone();
                 return;
             }
             catch (Exception ex)
             {
-                Log.Write("Miš: softverska kontrola " + BitConverter.ToString(args) + ": " + ex.Message);
+                // dok miš spava ne odgovara – zapiši samo prvi neuspjeh u nizu
+                if (!_claimFailLogged)
+                    Log.Write("Miš: softverska kontrola " + BitConverter.ToString(args) + ": " + ex.Message + " (vjerojatno spava)");
             }
         }
+        _claimFailLogged = true;
+    }
+
+    private bool _claimFailLogged;
+
+    private void ClaimDone()
+    {
+        _claimFailLogged = false;
     }
 
     /// <summary>Željene boje po zonama miša (redom kako su otkrivene).</summary>

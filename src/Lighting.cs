@@ -622,6 +622,7 @@ public sealed class LightingEngine : IDisposable
 
             lock (_snapshot) Array.Copy(_frame, _snapshot, 256);
 
+            if (_kb.TakeResendRequest()) ForceResend();
             if (_kb.IsConnected) Send(keys);
             PushMouse();
             UpdateStats();
