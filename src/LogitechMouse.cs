@@ -37,7 +37,13 @@ public sealed class LogitechMouse : IDisposable
     private byte _onboard;
     public string Name { get; private set; } = "";
     public string Status { get; private set; } = "Miš nije pronađen.";
-    public int ClusterCount { get { lock (_lock) return _clusters.Count; } }
+    /// <summary>Broj zona kojima program upravlja: pojedine LED-ice (0x8081) ili klasteri (0x8071).</summary>
+    public int ClusterCount { get { lock (_lock) return _ledZones.Count > 0 ? _ledZones.Count : _clusters.Count; } }
+
+    // pojedine LED-ice preko 0x8081 (per-key lighting v2) – isti paketi kao kod tipkovnice
+    private byte _perKey;
+    private readonly List<byte> _ledZones = new();
+    private int[] _ledSent = Array.Empty<int>();
     public event Action Changed;
 
     /// <summary>Traži Logitech miš s RGB efektima (izostavlja tipkovnicu). Vraća true ako je pronađen.</summary>
@@ -155,7 +161,9 @@ public sealed class LogitechMouse : IDisposable
                 _clusters.Add(new Cluster { Index = c, Location = loc, StaticEffectIndex = (byte)staticIdx });
         }
         if (_clusters.Count == 0) return false;
-        _desired = Enumerable.Repeat(-1, _clusters.Count).ToArray();
+        DiscoverLeds(dev);
+        _desired = Enumerable.Repeat(-1, _ledZones.Count > 0 ? _ledZones.Count : _clusters.Count).ToArray();
+        _ledSent = Enumerable.Repeat(-1, _ledZones.Count).ToArray();
         _onboard = 0;
         if (HostMode)
         {
@@ -240,6 +248,13 @@ public sealed class LogitechMouse : IDisposable
                 {
                     ClaimSoftwareControl(dev);
                     foreach (var cl in clusters) cl.Sent = -1;
+                    Array.Fill(_ledSent, -1);
+                }
+                if (_perKey != 0 && _ledZones.Count > 0)
+                {
+                    SendLeds(dev, desired, clusters);
+                    failures = 0;
+                    continue;
                 }
                 for (int i = 0; i < clusters.Length; i++)
                 {
@@ -268,6 +283,77 @@ public sealed class LogitechMouse : IDisposable
                 }
                 Thread.Sleep(200);
             }
+        }
+    }
+
+    /// <summary>Čita koje LED-ice miš ima (0x8081 funkcija 0: bitmapa zona po stranicama).</summary>
+    private void DiscoverLeds(HidppDevice dev)
+    {
+        _ledZones.Clear();
+        _perKey = TryFeature(dev, 0x8081);
+        if (_perKey == 0) return;
+        try
+        {
+            var bitmap = new List<byte>();
+            for (byte page = 0; page < 3; page++)
+            {
+                var r = dev.Request(_perKey, 0, new byte[] { 0x00, page }, 400);
+                bitmap.AddRange(r.Skip(2));
+            }
+            for (int z = 1; z < 255 && z / 8 < bitmap.Count; z++)
+                if (((bitmap[z / 8] >> (z % 8)) & 1) != 0) _ledZones.Add((byte)z);
+            Log.Write($"Miš: pojedine LED-ice (0x8081): {_ledZones.Count} – zone {string.Join(", ", _ledZones.Select(z => $"0x{z:X2}"))}");
+            if (_ledZones.Count > 16) { Log.Write("Miš: neuobičajeno mnogo zona, koristim samo klastere."); _ledZones.Clear(); }
+            dev.ErrorReceived += (f, fn, code) =>
+            {
+                if (f == _perKey) Log.Write($"Miš: greška 0x{code:X2} na paketu LED-ica (funkcija 0x{fn:X2})");
+            };
+        }
+        catch (Exception ex)
+        {
+            Log.Write("Miš: čitanje LED-ica nije uspjelo: " + ex.Message);
+            _ledZones.Clear();
+        }
+    }
+
+    /// <summary>Šalje boje svih LED-ica: mali paketi s 4 različite zone (popunjeni ostalim LED-icama) i commit.</summary>
+    private void SendLeds(HidppDevice dev, int[] desired, Cluster[] clusters)
+    {
+        bool changed = false;
+        for (int i = 0; i < _ledZones.Count; i++)
+            if (desired[i] >= 0 && desired[i] != _ledSent[i]) { changed = true; break; }
+        if (!changed) return;
+
+        // klaster drži na statičnoj boji prve LED-ice (neki miševi bez toga ne prikazuju pojedine LED-ice)
+        if (clusters.Length > 0 && clusters[0].Sent < 0 && desired[0] >= 0)
+        {
+            SendStatic(dev, clusters[0], desired[0]);
+            clusters[0].Sent = desired[0];
+        }
+
+        int n = _ledZones.Count;
+        for (int i = 0; i < n; i += 4)
+        {
+            var a = new byte[16];
+            for (int j = 0; j < 4; j++)
+            {
+                int idx = n >= 4 ? (i + j) % n : Math.Min(i + j, n - 1);
+                if (i + j >= n && n >= 4) idx = (i + j - n) % n;   // popuni ostalim LED-icama
+                int rgb = Math.Max(0, desired[idx]);
+                a[j * 4] = _ledZones[idx];
+                a[j * 4 + 1] = (byte)(rgb >> 16);
+                a[j * 4 + 2] = (byte)(rgb >> 8);
+                a[j * 4 + 3] = (byte)rgb;
+            }
+            dev.Send(_perKey, 1, a);
+        }
+        try { dev.Request(_perKey, 7, Array.Empty<byte>(), 150); }
+        catch (TimeoutException) { }
+        for (int i = 0; i < n; i++) _ledSent[i] = desired[i];
+        if (!_loggedSet)
+        {
+            _loggedSet = true;
+            Log.Write($"Miš: poslane boje za {n} LED-ica preko 0x8081.");
         }
     }
 

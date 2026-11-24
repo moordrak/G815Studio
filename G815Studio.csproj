@@ -11,7 +11,7 @@
     <RootNamespace>G815Studio</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationVisualStyles>true</ApplicationVisualStyles>
-    <Version>1.6.4</Version>
+    <Version>1.7.0</Version>
     <Product>G815 Studio</Product>
     <Description>Zamjena za Logitech G HUB za G815 LIGHTSYNC tipkovnicu</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>

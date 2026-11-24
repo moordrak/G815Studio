@@ -172,13 +172,14 @@ public static class KeyLayouts
 
         // Zone miša: virtualne tipke desno od numeričke tipkovnice, pa efekti (val, vatra…) "prelaze" i na miš.
         // Ne crtaju se na slici i ne šalju se tipkovnici (zone 0xF0+).
-        for (int i = 0; i < mouseZones && i < 8; i++)
+        for (int i = 0; i < mouseZones && i < 16; i++)
         {
             byte z = (byte)(0xF0 + i);
             keys.Add(new KeyDef
             {
                 Id = "MOUSE" + i, Label = "Miš " + (i + 1), DefaultZone = z, Zone = z,
-                X = ox + 23.5f, Y = oy + 2.25f + i * 1.0f, W = 1, H = 1, Group = "mouse", Shape = "mouse"
+                // LED-ice miša složene u stupac desno od numeričke tipkovnice
+                X = ox + 23.5f, Y = oy + 0.25f + i * (6.0f / Math.Max(1, Math.Min(mouseZones, 16))), W = 1, H = 1, Group = "mouse", Shape = "mouse"
             });
         }
 

@@ -1,5 +1,8 @@
 # Popis promjena
 
+## v1.7.0
+- **Miš – svaka LED-ica posebno:** ako miš ima značajku 0x8081 (npr. G502 X PLUS s 8 LED-ica), program upravlja svakom LED-icom zasebno. U načinu „Prati efekt tipkovnice“ LED-ice su složene u stupac desno od numeričke tipkovnice, pa se val, vatra, spektar i ostali efekti vide i po dužini miša.
+
 ## v1.6.4
 - **Tipkovnica:** veliki paketi boja šalju se samo puni (13 tipki); ostatak ide malim paketima popunjenima drugim tipkama. Time nestaju i zadnje greške 0x02.
 - **Miš:** u log se zapisuju sve HID++ značajke miša i popis njegovih ugrađenih efekata (za procjenu upravljanja pojedinim LED-icama).
