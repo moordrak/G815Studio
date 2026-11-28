@@ -63,9 +63,28 @@ public sealed class EffectRenderer : IDisposable
         var c2 = ColorUtil.Parse(ep.Color2, Color.Red);
         var bg = ColorUtil.Parse(ep.Background, Color.Black);
         double speed = Math.Clamp(ep.Speed, 1, 100) / 50.0;    // 0.02 .. 2
-        // "duga" ili vlastite boje: h ide 0..1 kroz Boju 1 → Boju 2 → natrag
-        Color Pal(double h) => ep.Rainbow ? ColorUtil.Hsv(h, 1, 1)
-            : ColorUtil.Lerp(c1, c2, 0.5 - 0.5 * Math.Cos(2 * Math.PI * (h - Math.Floor(h))));
+        // do četiri vlastite boje (Boja 3 i 4 su neobavezne)
+        var stops = new List<Color> { c1, c2 };
+        if (!string.IsNullOrEmpty(ep.Color3)) stops.Add(ColorUtil.Parse(ep.Color3, c2));
+        if (!string.IsNullOrEmpty(ep.Color4)) stops.Add(ColorUtil.Parse(ep.Color4, c2));
+        // gradijent 0..1: Boja 1 → Boja 2 (→ Boja 3 → Boja 4)
+        Color Grad(double k)
+        {
+            k = Math.Clamp(k, 0, 1) * (stops.Count - 1);
+            int a = Math.Min((int)k, stops.Count - 2);
+            return ColorUtil.Lerp(stops[a], stops[a + 1], k - a);
+        }
+        // "duga" ili vlastite boje: h ide 0..1 kroz sve boje i glatko natrag na Boju 1
+        Color Pal(double h)
+        {
+            if (ep.Rainbow) return ColorUtil.Hsv(h, 1, 1);
+            h -= Math.Floor(h);
+            if (stops.Count == 2) return ColorUtil.Lerp(c1, c2, 0.5 - 0.5 * Math.Cos(2 * Math.PI * h));
+            double k = h * stops.Count;
+            int a = (int)k % stops.Count;
+            double u = k - Math.Floor(k);
+            return ColorUtil.Lerp(stops[a], stops[(a + 1) % stops.Count], 0.5 - 0.5 * Math.Cos(Math.PI * u));
+        }
 
         if (cfg.Effect != EffectType.Audio) { _audio?.Dispose(); _audio = null; }
         if (!IsAudioEffect(cfg.Effect)) { _analyzer?.Dispose(); _analyzer = null; }
@@ -182,7 +201,7 @@ public sealed class EffectRenderer : IDisposable
                     double lvl = Math.Min(1, (key.NX < 0.5 ? _lvlL : _lvlR) * 1.25);
                     int lit = (int)Math.Round(lvl * steps);
                     int step = Math.Min(steps - 1, (int)(d * steps));
-                    frame[key.Zone] = step < lit ? ColorUtil.Lerp(c1, c2, step / (double)(steps - 1)) : bg;
+                    frame[key.Zone] = step < lit ? Grad(step / (double)(steps - 1)) : bg;
                 }
                 break;
             }
@@ -202,7 +221,7 @@ public sealed class EffectRenderer : IDisposable
                     double h = 1 - key.NY;                       // 0 dolje, 1 gore
                     int row = Math.Clamp((int)(h * rows), 0, rows - 1);
                     int litRows = (int)Math.Round(_bandHold[band] * rows);
-                    frame[key.Zone] = row < litRows ? ColorUtil.Lerp(c1, c2, row / (double)(rows - 1)) : bg;
+                    frame[key.Zone] = row < litRows ? Grad(row / (double)(rows - 1)) : bg;
                 }
                 break;
             }
@@ -257,7 +276,7 @@ public sealed class EffectRenderer : IDisposable
                 {
                     double pos = ep.Direction switch { 1 => 1 - key.NX, 2 => key.NY, 4 => 1 - key.NY, 3 => Math.Abs(key.NX - 0.5) * 2, _ => key.NX };
                     double k = 0.5 + 0.5 * Math.Sin(2 * Math.PI * (pos - t * 0.25 * speed));
-                    frame[key.Zone] = ColorUtil.Lerp(c1, c2, k);
+                    frame[key.Zone] = Grad(k);
                 }
                 break;
 
@@ -384,7 +403,7 @@ public sealed class EffectRenderer : IDisposable
                         _keyFrom[i] = ColorUtil.Lerp(_keyFrom[i], _keyTo[i], 1);
                         _keyTo[i] = ep.Rainbow
                             ? ColorUtil.Hsv(_rnd.NextDouble(), 0.85 + _rnd.NextDouble() * 0.15, 1)
-                            : ColorUtil.Lerp(c1, c2, _rnd.NextDouble());
+                            : Grad(_rnd.NextDouble());
                         _keyA[i] = t;
                         _keyB[i] = _rnd.NextDouble();
                     }
@@ -466,6 +485,7 @@ public sealed class LightingEngine : IDisposable
     private readonly Color[] _sent = new Color[256];
     private readonly bool[] _sentValid = new bool[256];
     private readonly bool[] _everUsed = new bool[256];
+    private long _settleAt;       // kad se slika smiri, u tom trenutku jednom ponovno pošalji sve tipke
     private readonly Color[] _snapshot = new Color[KeyLayouts.ZoneCount];
     private Thread _thread;
     private volatile bool _stop;
@@ -551,19 +571,19 @@ public sealed class LightingEngine : IDisposable
             _pcZones = pz;
         }
         var list = defs.ToList();
-        float minX = list.Min(k => k.CenterX), minY = list.Min(k => k.CenterY);
-        float spanX = Math.Max(1, list.Max(k => k.CenterX) - minX);
-        float spanY = Math.Max(1, list.Max(k => k.CenterY) - minY);
+        float minX = list.Min(k => k.EffectX), minY = list.Min(k => k.EffectY);
+        float spanX = Math.Max(1, list.Max(k => k.EffectX) - minX);
+        float spanY = Math.Max(1, list.Max(k => k.EffectY) - minY);
         lock (_lock)
         {
             _keys = list.Select(k => new LightKey
             {
                 Id = k.Id,
                 Zone = k.Zone,
-                UX = k.CenterX,
-                UY = k.CenterY,
-                NX = (k.CenterX - minX) / spanX,
-                NY = (k.CenterY - minY) / spanY
+                UX = k.EffectX,
+                UY = k.EffectY,
+                NX = (k.EffectX - minX) / spanX,
+                NY = (k.EffectY - minY) / spanY
             }).ToArray();
             RebuildBase();
         }
@@ -699,6 +719,16 @@ public sealed class LightingEngine : IDisposable
         var changes = new List<(byte Zone, Color Color)>();
         lock (_sentValid)
         {
+            // tipke iz paketa koje je tipkovnica odbila šalju se ponovno
+            foreach (byte z in _kb.TakeRejectedZones()) _sentValid[z] = false;
+            // sigurnosna mreža: kad se slika smiri (npr. Isključeno ili statične boje), jednom se ponovno pošalju
+            // sve tipke, pa nijedna ne ostane u staroj boji ako se neki paket izgubio
+            long now = _clock.ElapsedMilliseconds;
+            if (_settleAt > 0 && now >= _settleAt)
+            {
+                _settleAt = 0;
+                Array.Clear(_sentValid);
+            }
             for (int z = 0; z < 256; z++)
             {
                 if (!_everUsed[z]) continue;
@@ -708,6 +738,7 @@ public sealed class LightingEngine : IDisposable
             }
         }
         if (changes.Count == 0) return;
+        _settleAt = _clock.ElapsedMilliseconds + 400;
 
         long t0 = _clock.ElapsedTicks;
         try

@@ -45,10 +45,16 @@ public sealed class EffectParams
 {
     public string Color1;
     public string Color2;
+    public string Color3;           // neobavezne dodatne boje gradijenta (null = samo dvije boje)
+    public string Color4;
     public string Background = "#000000";
     public int Speed = 50;          // 1..100
     public int Direction;           // 0 lijevo→desno, 1 desno→lijevo, 2 gore→dolje, 3 iz središta
     public bool Rainbow = true;     // kod efekata s dugom: duga ili vlastite boje (Boja 1 ↔ Boja 2)
+
+    /// <summary>Efekti koji prelijevaju boje pa mogu imati i Boju 3 i Boju 4.</summary>
+    public static bool SupportsFourColors(EffectType e) => e is EffectType.Wave or EffectType.ColorCycle or EffectType.Swirl
+        or EffectType.RadialRainbow or EffectType.GradientWave or EffectType.Mosaic or EffectType.Audio or EffectType.Spectrum;
 
     public static EffectParams DefaultFor(EffectType e, LightingConfig legacy)
     {
@@ -176,6 +182,7 @@ public sealed class DevicePlacement
     public string Shape = "line";         // "line" = traka, "ring" = krug (ventilator)
     public bool Vertical;                 // traka okomito
     public bool Reverse;                  // LED-ice obrnutim redom (drugi smjer)
+    public bool Mirror;                   // zrcalno: druga polovica uređaja ponavlja prvu
     public float Size;                    // duljina trake / promjer kruga u jedinicama tipki; 0 = zadano
 }
 

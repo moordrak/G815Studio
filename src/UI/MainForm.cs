@@ -26,7 +26,8 @@ public sealed class MainForm : Form
     internal KeyboardView KeyboardViewForScreenshots => _kbView;
     private ComboBox _effectCombo, _dirCombo;
     private TrackBar _speed, _bright;
-    private Button _c1Btn, _c2Btn, _bgBtn, _brushBtn;
+    private Button _c1Btn, _c2Btn, _c3Btn, _c4Btn, _bgBtn, _brushBtn;
+    private CheckBox _fourChk;
     private Color _brush = Color.FromArgb(255, 40, 40);
     private Label _effectHelp, _selInfo, _colorsTitle, _colorsNote, _speedLbl, _dirLbl;
     private CheckBox _rainbowChk;
@@ -66,7 +67,7 @@ public sealed class MainForm : Form
     private Button _pcWrite;
     private CheckBox _ramEnable;
     private Label _ramStatus;
-    private CheckBox _arrangeChk, _devVertical, _devReverse;
+    private CheckBox _arrangeChk, _devVertical, _devReverse, _devMirror;
     private ComboBox _devCombo, _devShape;
     private NumericUpDown _devSize;
 
@@ -462,14 +463,35 @@ public sealed class MainForm : Form
         };
         _c1Btn = Ui.Btn("Boja 1", (_, _) => PickConfigColor(1), 250);
         _c2Btn = Ui.Btn("Boja 2", (_, _) => PickConfigColor(2), 250);
+        _fourChk = new CheckBox { Text = "Četiri boje u prijelazu", AutoSize = true, Margin = new Padding(3, 4, 3, 4) };
+        _fourChk.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            var ep = P.Lighting.Current;
+            if (_fourChk.Checked)
+            {
+                ep.Color3 ??= "#FFD000";
+                ep.Color4 ??= "#00FF88";
+            }
+            else ep.Color3 = ep.Color4 = null;
+            UpdateColorButtons();
+            _c.LightingChanged(P);
+        };
+        _c3Btn = Ui.Btn("Boja 3", (_, _) => PickConfigColor(4), 250);
+        _c4Btn = Ui.Btn("Boja 4", (_, _) => PickConfigColor(5), 250);
         _bgBtn = Ui.Btn("Pozadina", (_, _) => PickConfigColor(3), 250);
         _colorsNote = new Label { AutoSize = true, MaximumSize = new Size(250, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 0) };
         cols.Controls.Add(_colorsTitle);
         cols.Controls.Add(_rainbowChk);
         cols.Controls.Add(_c1Btn);
         cols.Controls.Add(_c2Btn);
+        cols.Controls.Add(_fourChk);
+        cols.Controls.Add(_c3Btn);
+        cols.Controls.Add(_c4Btn);
         cols.Controls.Add(_bgBtn);
         cols.Controls.Add(_colorsNote);
+        cols.Controls.Add(Ui.Btn("Zadane boje ovog efekta", (_, _) => ResetEffectColors(false), 250));
+        cols.Controls.Add(Ui.Btn("Zadane boje svih efekata", (_, _) => ResetEffectColors(true), 250));
         controls.Controls.Add(Ui.Group("Boje efekta", cols));
 
         // --- bojanje tipki
@@ -547,6 +569,9 @@ public sealed class MainForm : Form
         _devReverse = new CheckBox { Text = "Obrnuti smjer LED-ica", AutoSize = true };
         _devReverse.CheckedChanged += (_, _) => SaveDevicePlacement();
         lay.Controls.Add(_devReverse);
+        _devMirror = new CheckBox { Text = "Zrcalno (druga polovica ponavlja prvu)", AutoSize = true };
+        _devMirror.CheckedChanged += (_, _) => SaveDevicePlacement();
+        lay.Controls.Add(_devMirror);
         var sizeRow = Ui.Flow();
         sizeRow.Controls.Add(new Label { Text = "Veličina (0 = zadano):", AutoSize = true, Margin = new Padding(3, 6, 6, 3) });
         _devSize = new NumericUpDown { Minimum = 0, Maximum = 40, DecimalPlaces = 1, Increment = 0.5m, Width = 70 };
@@ -1125,9 +1150,10 @@ public sealed class MainForm : Form
             _devShape.SelectedIndex = ring ? 1 : 0;
             _devVertical.Checked = p?.Vertical == true;
             _devReverse.Checked = p?.Reverse == true;
+            _devMirror.Checked = p?.Mirror == true;
             _devSize.Value = Math.Clamp((decimal)(p?.Size ?? 0), _devSize.Minimum, _devSize.Maximum);
             _devShape.Enabled = _devSize.Enabled = pc;
-            _devReverse.Enabled = item != null;          // smjer se mijenja na svim uređajima osim tipkovnice
+            _devReverse.Enabled = _devMirror.Enabled = item != null;   // smjer i zrcalo na svim uređajima osim tipkovnice
             _devVertical.Enabled = pc && !ring;
         }
         finally { _loading = was; }
@@ -1139,7 +1165,8 @@ public sealed class MainForm : Form
         var p = _c.GetPlacement(item.Id);
         if (!item.Id.StartsWith("pc:", StringComparison.Ordinal))
         {
-            p.Reverse = _devReverse.Checked;    // miš i memorija: samo smjer (i položaj povlačenjem)
+            p.Reverse = _devReverse.Checked;    // miš i memorija: smjer, zrcalo (i položaj povlačenjem)
+            p.Mirror = _devMirror.Checked;
             _c.PlacementChanged();
             return;
         }
@@ -1155,6 +1182,7 @@ public sealed class MainForm : Form
         else p.Size = (float)_devSize.Value;
         p.Vertical = p.Shape == "line" && _devVertical.Checked;
         p.Reverse = _devReverse.Checked;
+        p.Mirror = _devMirror.Checked;
         _devVertical.Enabled = p.Shape == "line";
         _c.PlacementChanged();
     }
@@ -1261,14 +1289,35 @@ public sealed class MainForm : Form
     private void PickConfigColor(int which)
     {
         var ep = P.Lighting.Current;
-        string cur = which == 1 ? ep.Color1 : which == 2 ? ep.Color2 : ep.Background;
+        string cur = which switch { 1 => ep.Color1, 2 => ep.Color2, 4 => ep.Color3, 5 => ep.Color4, _ => ep.Background };
         var c = Ui.PickColor(this, ColorUtil.Parse(cur));
         if (!c.HasValue) return;
         string hex = ColorUtil.ToHex(c.Value);
         if (which == 1) ep.Color1 = hex;
         else if (which == 2) ep.Color2 = hex;
+        else if (which == 4) ep.Color3 = hex;
+        else if (which == 5) ep.Color4 = hex;
         else ep.Background = hex;
         UpdateColorButtons();
+        _c.LightingChanged(P);
+    }
+
+    /// <summary>Vraća zadane boje (i dugu) odabranom efektu ili svim efektima; brzina i smjer ostaju.</summary>
+    private void ResetEffectColors(bool all)
+    {
+        var L = P.Lighting;
+        foreach (var e in all ? Enum.GetValues<EffectType>() : new[] { L.Effect })
+        {
+            var ep = L.For(e);
+            var d = EffectParams.DefaultFor(e, null);
+            ep.Color1 = d.Color1;
+            ep.Color2 = d.Color2;
+            ep.Color3 = d.Color3;
+            ep.Color4 = d.Color4;
+            ep.Background = d.Background;
+            ep.Rainbow = d.Rainbow;
+        }
+        LoadEffectParams();
         _c.LightingChanged(P);
     }
 
@@ -1317,6 +1366,16 @@ public sealed class MainForm : Form
         }
         Set(_c1Btn, slot.C1, ep.Color1, custom);
         Set(_c2Btn, slot.C2, ep.Color2, custom);
+        bool four = EffectParams.SupportsFourColors(L.Effect) && slot.C2 != null;
+        bool was = _loading;
+        _loading = true;
+        _fourChk.Visible = four;
+        _fourChk.Checked = ep.Color3 != null || ep.Color4 != null;
+        _fourChk.Enabled = custom;
+        _loading = was;
+        bool show34 = four && _fourChk.Checked;
+        Set(_c3Btn, show34 ? "Boja 3" : null, ep.Color3 ?? ep.Color2, custom);
+        Set(_c4Btn, show34 ? "Boja 4" : null, ep.Color4 ?? ep.Color2, custom);
         Set(_bgBtn, slot.Bg, ep.Background, true);
     }
 

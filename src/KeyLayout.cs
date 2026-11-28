@@ -24,7 +24,13 @@ public sealed class KeyDef
     public string DevShape { get; init; }   // "line" ili "ring" (izlazi računala)
     public bool DevVertical { get; init; }
 
+    // točka po kojoj efekt boji LED-icu (zrcaljenje); null = njezino stvarno mjesto na slici
+    public float? SampleX { get; set; }
+    public float? SampleY { get; set; }
+
     public float CenterX => X + W / 2;
+    public float EffectX => SampleX ?? CenterX;
+    public float EffectY => SampleY ?? CenterY;
     public float CenterY => Y + H / 2;
     public override string ToString() => $"{Label}  [{Id}, zona 0x{Zone:X2}]";
 }
@@ -306,6 +312,20 @@ public static class KeyLayouts
                     Group = "ram", Shape = "ram",
                     Device = "ram", DeviceName = "RAM", DevX = rx, DevY = ry, DevW = (sticks - 1) * RamGap + RamW, DevH = RamH
                 });
+            }
+        }
+
+        // zrcaljenje: druga polovica uređaja boji se kao prva (simetrično oko sredine uređaja)
+        foreach (var dev in keys.Where(k => k.Device != null).GroupBy(k => k.Device))
+        {
+            if (Place(dev.Key)?.Mirror != true) continue;
+            var d0 = dev.First();
+            bool vertical = d0.Shape == "ram" || d0.DevVertical;
+            float mid = vertical ? d0.DevY + d0.DevH / 2 : d0.DevX + d0.DevW / 2;
+            foreach (var k in dev)
+            {
+                if (vertical) { if (k.CenterY > mid) k.SampleY = 2 * mid - k.CenterY; }
+                else if (k.CenterX > mid) k.SampleX = 2 * mid - k.CenterX;
             }
         }
 

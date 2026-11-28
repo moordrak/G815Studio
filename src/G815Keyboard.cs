@@ -227,7 +227,9 @@ public sealed class G815Keyboard : IDisposable
         // pa se prazna mjesta pune drugim tipkama s njihovom trenutnom bojom.
         var packets = new List<(byte Function, byte[] Args)>();
         var singles = new List<(byte Zone, Color Color)>();
-        foreach (var group in changes.GroupBy(c => ColorUtil.Rgb(c.Color)))
+        // kod animacija (puno promjena) gotovo iste boje idu u isti veliki paket: manje paketa, a razlika se ne vidi
+        int q = changes.Count > 40 ? 2 : 0;
+        foreach (var group in changes.GroupBy(c => ((c.Color.R >> q) << 16) | ((c.Color.G >> q) << 8) | (c.Color.B >> q)))
         {
             var list = group.ToList();
             // veliki paket samo pun (13 tipki): G815 odbija i nule i ponavljanje na praznim mjestima
@@ -271,13 +273,17 @@ public sealed class G815Keyboard : IDisposable
 
         Interlocked.Exchange(ref _busyInFrame, 0);
         bool pace = DateTime.UtcNow < _paceUntil;
+        int sent = 0;
         foreach (var (fn, args) in packets)
         {
-            // svaki paket dobiva svoj softverski ID (1–9), pa se iz greške zna koji je paket odbijen
+            // svaki paket dobiva svoj softverski ID (1–9), pa se iz greške zna koji je paket odbijen i njegove
+            // se tipke pošalju ponovno. Nakon 8 paketa kratka stanka: red tipkovnice se isprazni (manje „zauzeto“),
+            // a ID-ovi se ne ponove prije nego stigne eventualna greška za stariji paket.
+            if (sent > 0 && (pace ? sent % 4 == 0 : sent % 8 == 0)) Thread.Sleep(1);
             _sw = (byte)(_sw % 9 + 1);
             lock (_recent) _recent[_sw] = (fn, args);
             dev.Send(_perKey, fn, args, _sw);  // WriteFile čeka dok paket ne ode na USB
-            if (pace) Thread.Sleep(1);
+            sent++;
         }
 
         // commit: kratko pričekaj potvrdu, ali izostanak potvrde nije greška
@@ -301,11 +307,31 @@ public sealed class G815Keyboard : IDisposable
 
         if (Volatile.Read(ref _busyInFrame) > 0)
         {
-            // tipkovnica nije stigla obraditi neke pakete: iduće 2 s šalji s malim razmakom,
-            // a promjene iz ovog okvira ponovi u idućem (ne označavaju se kao poslane)
+            // tipkovnica nije stigla obraditi neke pakete: iduće 2 s šalji s većim razmakom.
+            // Odbijeni paketi su već zapisani (TakeRejectedZones), pa se ponovno šalju samo njihove tipke.
             BusyRetries += _busyInFrame;
             _paceUntil = DateTime.UtcNow.AddSeconds(2);
-            throw new HidppException(0x08);
+        }
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentQueue<byte> _rejected = new();
+
+    /// <summary>Zone iz paketa koje je tipkovnica odbila (zauzeto ili greška), da ih osvjetljenje pošalje ponovno.</summary>
+    public List<byte> TakeRejectedZones()
+    {
+        var list = new List<byte>();
+        while (_rejected.TryDequeue(out var z)) list.Add(z);
+        return list;
+    }
+
+    private void RememberRejected(byte fnSw)
+    {
+        lock (_recent)
+        {
+            if (!_recent.TryGetValue((byte)(fnSw & 0x0F), out var p) || p.Fn != fnSw >> 4) return;
+            var a = p.Args;
+            if (p.Fn == 6) { for (int j = 3; j < 16; j++) if (a[j] != 0) _rejected.Enqueue(a[j]); }
+            else for (int j = 0; j < 4; j++) if (a[j * 4] != 0) _rejected.Enqueue(a[j * 4]);
         }
     }
 
@@ -335,9 +361,18 @@ public sealed class G815Keyboard : IDisposable
 
     private void OnDeviceError(byte feature, byte fnSw, byte code)
     {
-        if (feature == _perKey && code == 0x08) { Interlocked.Increment(ref _busyInFrame); return; }
+        if (feature == _perKey && code == 0x08)
+        {
+            Interlocked.Increment(ref _busyInFrame);
+            RememberRejected(fnSw);
+            return;
+        }
         // odbijen paket boja: tipke iz njega nisu osvježene → zatraži ponovno slanje svega (rijetko)
-        if (feature == _perKey && code == 0x02) Interlocked.Exchange(ref _resendRequested, 1);
+        if (feature == _perKey && code == 0x02)
+        {
+            RememberRejected(fnSw);
+            Interlocked.Exchange(ref _resendRequested, 1);
+        }
         // istu grešku zapiši najviše jednom u minuti (da log ne naraste)
         int key = (feature << 16) | (fnSw << 8) | code;
         lock (_errLogged)

@@ -167,6 +167,7 @@ public sealed class AppController : IDisposable
         EffectiveProfile = p;
         Engine.SetConfig(SettingsStore.Clone(p.Lighting));
         UpdateHook();
+        ApplySolidModes();
         StateChanged?.Invoke();
     }
 
@@ -185,8 +186,25 @@ public sealed class AppController : IDisposable
         {
             Engine.SetConfig(SettingsStore.Clone(p.Lighting));
             UpdateHook();
+            ApplySolidModes();
         }
         SaveSoon();
+    }
+
+    /// <summary>Sve ugašeno: „Ugasi osvjetljenje“ u traci ili efekt Isključeno (gasi i miš i računalo u načinu jedne boje).</summary>
+    public bool AllDark => Engine.LightsOff || EffectiveProfile?.Lighting?.Effect == EffectType.Off;
+
+    public void SetLightsOff(bool off)
+    {
+        Engine.LightsOff = off;
+        Engine.ForceResend();
+        ApplySolidModes();
+    }
+
+    private void ApplySolidModes()
+    {
+        if (Mouse != null) ApplyMouseMode();
+        if (Pc != null) ApplyPcMode();
     }
 
     public void ProfilesChanged()
@@ -397,7 +415,7 @@ public sealed class AppController : IDisposable
     {
         Engine.MouseFollow = Settings.MouseFollow;
         if (Settings.MouseEnabled && !Settings.MouseFollow && Mouse.IsConnected)
-            Mouse.SetColors(new[] { Engine.LightsOff ? Color.Black : ColorUtil.Parse(Settings.MouseColor) });
+            Mouse.SetColors(new[] { AllDark ? Color.Black : ColorUtil.Parse(Settings.MouseColor) });
     }
 
     private void OnMouseChanged()
@@ -485,7 +503,7 @@ public sealed class AppController : IDisposable
         Engine.PcFollow = Settings.PcFollow;
         if (Settings.PcEnabled && !Settings.PcFollow && Pc.IsConnected)
         {
-            var c = Engine.LightsOff ? Color.Black : ColorUtil.Parse(Settings.PcColor);
+            var c = AllDark ? Color.Black : ColorUtil.Parse(Settings.PcColor);
             Pc.SetSegmentColors(Enumerable.Repeat(c, Math.Max(1, Pc.TotalSegments)).ToArray());
         }
     }
