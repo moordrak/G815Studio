@@ -166,6 +166,7 @@ public sealed class AppSettings
     public string MouseColor = "#00C8FF";
     public bool MouseHostMode;            // miš u host načinu dok program radi
     public bool LightsOffOnExit = true;   // pri izlazu ugasi tipkovnicu, miša i računalo (ništa ne svijetli)
+    public bool LightsOffWithDisplays = true; // kad se monitori ugase (štednja energije), ugasi svu rasvjetu; kad se upale, vrati je
     public bool PcEnabled = true;
     public bool RamEnabled;               // Kingston Fury memorija (treba PawnIO i administratorska prava)
     public bool PcFollow = true;          // true = prati efekt tipkovnice, false = jedna boja

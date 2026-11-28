@@ -39,6 +39,7 @@ Prije prvog pokretanja potpuno zatvori Logitech G HUB, i iz traya.
 ### Profili i ostalo
 - **Profili** s automatskim prebacivanjem prema aplikaciji u fokusu (npr. `cs2.exe`).
 - **Tray ikona:** otvaranje prozora, brza promjena profila, gašenje osvjetljenja, izlaz.
+- **Štednja energije:** kad se monitori ugase, gasi se i sva rasvjeta, a vraća se kad se upale (može se isključiti u Postavkama).
 - Pokretanje s Windowsima (u trayu).
 - ISO (hrvatski) i ANSI raspored.
 
