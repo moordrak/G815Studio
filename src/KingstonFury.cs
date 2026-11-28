@@ -1,4 +1,4 @@
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>
 /// Kingston Fury DDR4/DDR5 RGB memorija preko SMBus-a (PawnIO). RGB čip modula u utoru n je na adresi 0x60+n (DDR5)
@@ -28,7 +28,7 @@ public sealed class KingstonFury : IDisposable
     public bool IsConnected { get { lock (_lock) return _bus != null && _addrs.Count > 0; } }
     public int StickCount { get { lock (_lock) return _addrs.Count; } }
     public int LedsPerStick => _ledsPerStick;
-    public string Status { get; private set; } = "Memorija nije spojena.";
+    public string Status { get; private set; } = L.T("Memorija nije spojena.");
     /// <summary>Svjetlina u izravnom načinu (0–100).</summary>
     public volatile int Brightness = 100;
     public event Action Changed;
@@ -44,7 +44,7 @@ public sealed class KingstonFury : IDisposable
             if (err != null) { Status = err; Log.Write("RAM: " + err); return false; }
             var bus = new PawnIoSmbus();
             try { err = bus.Open(); }
-            catch (Exception ex) { err = "PawnIO greška: " + ex.Message; }
+            catch (Exception ex) { err = L.T("PawnIO greška: ") + ex.Message; }
             if (err != null) { bus.Dispose(); Status = err; Log.Write("RAM: " + err); return false; }
             _bus = bus;
 
@@ -66,7 +66,7 @@ public sealed class KingstonFury : IDisposable
             }
             if (_addrs.Count == 0)
             {
-                Status = "Kingston Fury memorija nije pronađena (je li SMBus zauzet drugim programom, npr. SignalRGB?).";
+                Status = L.T("Kingston Fury memorija nije pronađena (je li SMBus zauzet drugim programom, npr. SignalRGB?).");
                 Log.Write("RAM: " + Status);
                 Drop();
                 return false;
@@ -78,7 +78,7 @@ public sealed class KingstonFury : IDisposable
             EnterDirect();
             _wanted = new Color[_addrs.Count * _ledsPerStick];
             _sent = null;
-            Status = $"Spojeno: Kingston Fury, {_addrs.Count} modula ({string.Join(", ", _addrs.Select(x => $"0x{x:X2}"))}), {_ledsPerStick} LED-ica po modulu";
+            Status = L.F("Spojeno: Kingston Fury, {0} modula ({1}), {2} LED-ica po modulu", _addrs.Count, string.Join(", ", _addrs.Select(x => $"0x{x:X2}")), _ledsPerStick);
             Log.Write("RAM: " + Status);
             StartThread();
         }
@@ -242,7 +242,7 @@ public sealed class KingstonFury : IDisposable
                 lock (_lock) _cache.Clear();
                 if (++failures >= 5)
                 {
-                    Status = "Memorija ne odgovara (SMBus zauzet?).";
+                    Status = L.T("Memorija ne odgovara (SMBus zauzet?).");
                     Thread.Sleep(2000);
                     failures = 0;
                 }
@@ -320,7 +320,7 @@ public sealed class KingstonFury : IDisposable
                 catch (Exception ex) { Log.Write("RAM: otpuštanje nije uspjelo: " + ex.Message); }
             }
             Drop();
-            Status = "Upravljanje memorijom isključeno.";
+            Status = L.T("Upravljanje memorijom isključeno.");
         }
         ThreadPool.QueueUserWorkItem(_ => Changed?.Invoke());
     }

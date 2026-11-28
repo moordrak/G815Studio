@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>
 /// SMBus na matičnoj ploči preko PawnIO drajvera (https://pawnio.eu) i njegovog modula SmbusI801.bin (Intel PCH, npr. B760).
@@ -51,9 +51,9 @@ public sealed class PawnIoSmbus : IDisposable
             if (!h.IsInvalid) { _dev = h; break; }
             int err = Marshal.GetLastWin32Error();
             h.Dispose();
-            if (err == 5) return "PawnIO odbija pristup: program mora raditi kao administrator.";
+            if (err == 5) return L.T("PawnIO odbija pristup: program mora raditi kao administrator.");
         }
-        if (_dev == null) return "PawnIO drajver nije pokrenut.";
+        if (_dev == null) return L.T("PawnIO drajver nije pokrenut.");
 
         if (!DeviceIoControl(_dev, IoctlLoadBinary, blob, blob.Length, null, 0, out _, IntPtr.Zero))
         {
@@ -163,7 +163,7 @@ public static class RamProbe
         }
         using var bus = new PawnIoSmbus();
         try { err = bus.Open(); }
-        catch (Exception ex) { err = "PawnIO greška: " + ex.Message; }
+        catch (Exception ex) { err = L.T("PawnIO greška: ") + ex.Message; }
         if (err != null)
         {
             Log.Write("RAM: " + err);

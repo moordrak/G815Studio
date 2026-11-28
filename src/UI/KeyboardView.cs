@@ -1,7 +1,7 @@
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>
 /// Crta G815 kako je dogovoreno u prijedlogu: crne uzdignute tipke (bočne stranice dolje i desno),
@@ -19,6 +19,7 @@ public sealed class KeyboardView : Control
     private bool _dragging;
     private bool _dragAdd;
     private Bitmap _static;
+    private Bitmap _bloom;
     private Size _staticSize;
     private Geo _geo;
     private Region _keyRegion;
@@ -77,7 +78,7 @@ public sealed class KeyboardView : Control
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        BackColor = Color.FromArgb(10, 11, 14);
+        BackColor = Color.FromArgb(5, 7, 11);
         MinimumSize = new Size(480, 180);
     }
 
@@ -123,6 +124,7 @@ public sealed class KeyboardView : Control
         if (disposing)
         {
             _static?.Dispose();
+            _bloom?.Dispose();
             _keyRegion?.Dispose();
         }
         base.Dispose(disposing);
@@ -259,6 +261,16 @@ public sealed class KeyboardView : Control
         gr.PixelOffsetMode = PixelOffsetMode.HighQuality;
         gr.Clear(BackColor);
         float f = g.F;
+
+        // HUD pozadina: mreža (jedna ćelija = jedna tipka) i kutne oznake
+        using (var grid = new Pen(Color.FromArgb(16, 76, 194, 255), 1))
+        {
+            var origin = g.Pt(0, 0);
+            float step = g.S;
+            for (float x = origin.X % step; x < Width; x += step) gr.DrawLine(grid, x, 0, x, Height);
+            for (float y = origin.Y % step; y < Height; y += step) gr.DrawLine(grid, 0, y, Width, y);
+        }
+        Theme.Brackets(gr, new RectangleF(6, 6, Width - 13, Height - 13), 14, Color.FromArgb(170, Theme.Accent));
 
         // kućište: oštri kutovi, okomiti prijelaz, brušeni aluminij
         var body = new RectangleF(g.Bx, g.By, g.Bw, g.Bh);
@@ -941,9 +953,10 @@ public sealed class KeyboardView : Control
         gr.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         float f = g.F;
 
-        // 1) sjaj ispod tipki (samo izvan tipki)
+        // 1) sjaj ispod tipki (samo izvan tipki): mekani „bloom“ iz male bitmape + bliži sjaj po tipki
         var saved = gr.Clip;
         if (_keyRegion != null) gr.SetClip(_keyRegion, CombineMode.Exclude);
+        DrawBloom(gr, g);
         foreach (var k in RealKeys)
         {
             var c = ColorOf?.Invoke(k) ?? Color.Black;
@@ -1084,6 +1097,45 @@ public sealed class KeyboardView : Control
             if (Selected.Contains(logo.Id))
                 using (var sp = Rounded(lr, 8 * f)) gr.DrawPath(selPen, sp);
         }
+    }
+
+    /// <summary>
+    /// Boje svih LED-ica nacrtaju se u bitmapu osam puta manju od kontrole, a zatim razvuku preko slike.
+    /// Razvlačenje s bilinearnim filtrom daje mekani sjaj (jeftin blur) i radi i na 60 FPS.
+    /// </summary>
+    private void DrawBloom(Graphics gr, Geo g)
+    {
+        const int down = 8;
+        int bw = Math.Max(1, Width / down), bh = Math.Max(1, Height / down);
+        if (_bloom == null || _bloom.Width != bw || _bloom.Height != bh)
+        {
+            _bloom?.Dispose();
+            _bloom = new Bitmap(bw, bh, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        }
+        using (var bg = Graphics.FromImage(_bloom))
+        {
+            bg.Clear(Color.Transparent);
+            bg.ScaleTransform(1f / down, 1f / down);
+            void Fill(KeyDef k, RectangleF r)
+            {
+                var c = ColorOf?.Invoke(k) ?? Color.Black;
+                if (IsDark(c)) return;
+                using var b = new SolidBrush(c);
+                bg.FillRectangle(b, RectangleF.Inflate(r, 2 * g.F, 2 * g.F));
+            }
+            foreach (var k in RealKeys) Fill(k, g.Rect(k));
+            foreach (var m in MouseLeds) Fill(m, g.Led(m));
+            foreach (var dev in PcDevices) foreach (var k in dev) Fill(k, g.Rect(k));
+            foreach (var stick in RamSticks) foreach (var k in stick) Fill(k, RamSegRect(g, k));
+            var logo = Find("LOGO");
+            if (logo != null) Fill(logo, RectangleF.Inflate(LogoRect(g), -10 * g.F, -10 * g.F));
+        }
+        using var ia = new System.Drawing.Imaging.ImageAttributes();
+        ia.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix { Matrix33 = 0.55f });
+        var mode = gr.InterpolationMode;
+        gr.InterpolationMode = InterpolationMode.HighQualityBilinear;
+        gr.DrawImage(_bloom, new Rectangle(-down / 2, -down / 2, bw * down, bh * down), 0, 0, bw, bh, GraphicsUnit.Pixel, ia);
+        gr.InterpolationMode = mode;
     }
 
     private void DrawMouseLeds(Graphics gr, Geo g, Pen selPen)

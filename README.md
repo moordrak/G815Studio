@@ -1,8 +1,12 @@
-# G815 Studio
+<p align="center"><img src="docs/svitac.png" width="128" alt="SVITAC"></p>
 
-Lagana zamjena za Logitech G HUB za tipkovnicu **Logitech G815 LIGHTSYNC** (Windows 10/11).
+# SVITAC
 
-G815 Studio upravlja osvjetljenjem svake tipke, efektima, makroima na G tipkama i profilima. Živi kao mala ikona u trayu, bez servisa u pozadini i bez telemetrije. Nema vanjskih ovisnosti: tipkovnicom upravlja izravno preko USB-a (Logitechov HID++ 2.0 protokol), na isti način kao OpenRGB.
+Lagan program za RGB osvjetljenje i makroe na Windowsima 10/11 (prije *G815 Studio*). Upravlja tipkovnicom **Logitech G815 LIGHTSYNC**, mišem **Logitech G502 X PLUS** (i drugim Logitechovim RGB miševima), **ASRock Polychrome** rasvjetom na matičnoj ploči (ARGB i RGB headeri) i memorijom **Kingston Fury**. Svi uređaji prate iste efekte.
+
+SVITAC upravlja osvjetljenjem svake tipke, efektima, makroima na G tipkama i profilima. Živi kao mala ikona u trayu, bez servisa u pozadini i bez telemetrije. Nema vanjskih ovisnosti: uređajima upravlja izravno preko USB-a (Logitechov HID++ 2.0 protokol) i SMBus-a, na isti način kao OpenRGB.
+
+Sučelje je na **hrvatskom, engleskom, njemačkom, francuskom, španjolskom i talijanskom**. Po zadanom prati jezik Windowsa, a mijenja se u *Postavke → Jezik / Language*.
 
 ![Osvjetljenje – val duge](docs/screenshots/osvjetljenje-val.png)
 
@@ -10,7 +14,7 @@ Popis promjena po verzijama je u [CHANGELOG.md](CHANGELOG.md).
 
 ## Preuzimanje
 
-Najnoviju verziju preuzmi u [Releases](../../releases). `G815Studio.exe` je jedna samostalna datoteka, ne treba ništa instalirati, a ni .NET.
+Najnoviju verziju preuzmi u [Releases](../../releases). `SVITAC.exe` je jedna samostalna datoteka, ne treba ništa instalirati, a ni .NET.
 
 Prije prvog pokretanja potpuno zatvori Logitech G HUB, i iz traya.
 
@@ -41,7 +45,8 @@ Prije prvog pokretanja potpuno zatvori Logitech G HUB, i iz traya.
 - **Tray ikona:** otvaranje prozora, brza promjena profila, gašenje osvjetljenja, izlaz.
 - **Štednja energije:** kad se monitori ugase, gasi se i sva rasvjeta, a vraća se kad se upale (može se isključiti u Postavkama).
 - Pokretanje s Windowsima (u trayu).
-- ISO (hrvatski) i ANSI raspored.
+- ISO (europski) i ANSI raspored.
+- Šest jezika sučelja (hr, en, de, fr, es, it).
 
 | Profili | Postavke |
 |---|---|
@@ -53,8 +58,8 @@ Prije prvog pokretanja potpuno zatvori Logitech G HUB, i iz traya.
 
 - **Logitech G HUB mora biti potpuno zatvoren** (i iz traya). Najbolje ga je deinstalirati ili isključiti njegovo pokretanje s Windowsima, inače preuzima tipkovnicu.
 - Tipkovnica mora biti spojena **USB kabelom**.
-- Kad zatvoriš G815 Studio (Izlaz u trayu), tipkovnica se vraća na svoje ugrađene postavke.
-- Postavke su u `%APPDATA%\G815Studio\settings.json`, a dnevnik u `log.txt` u istoj mapi.
+- Kad zatvoriš SVITAC (Izlaz u trayu), sva rasvjeta ostaje ugašena (može se isključiti u *Postavke → Općenito*).
+- Postavke su u `%APPDATA%\SVITAC\settings.json`, a dnevnik u `log.txt` u istoj mapi. Pri prvom pokretanju v2.0.0 postavke, profili i makroi iz stare mape `%APPDATA%\G815Studio` sami se kopiraju, a pokretanje s Windowsima prebacuje se na novo ime. Stari `G815Studio.exe` možeš obrisati.
 
 ## Ako neka tipka ne svijetli ispravno
 
@@ -68,11 +73,13 @@ Ako neka tipka ne reagira, idi u **Postavke → Ispitivač i ispravak zona**:
 
 1. Instaliraj [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
 2. Pokreni `build.bat`.
-3. Gotov program je `publish\G815Studio.exe`.
+3. Gotov program je `publish\SVITAC.exe`.
 
 Workflow `build.yml` izradi exe na svaki push. Kad se objavi release, sam ga doda releaseu. Workflow `screenshots.yml` osvježava slike u ovom README-u.
 
 ## Tehničke bilješke
+
+- Sučelje je WinForms s vlastitim crtanjem (GDI+). Fontovi Chakra Petch, Barlow i JetBrains Mono ugrađeni su u exe (licenca SIL OFL, u `res/fonts`). Prijevodi su u `res/lang/<jezik>.json`, a ključ je hrvatski izvorni tekst.
 
 - Indeksi HID++ značajki otkrivaju se dinamički: 0x8081 per-key osvjetljenje, 0x8100 ugrađeni profili (host način), 0x8010 G tipke, 0x8020 M tipke, 0x8030 MR.
 - Boje se šalju kao u OpenRGB-u: samo promijenjene tipke, grupirane po boji (do 13 tipki po paketu), bez čekanja potvrde, s commitom na kraju.

@@ -1,4 +1,4 @@
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>
 /// RGB osvjetljenje Logitech miša (npr. G502 X PLUS) preko HID++ 2.0, žično ili preko LIGHTSPEED prijamnika.
@@ -36,7 +36,7 @@ public sealed class LogitechMouse : IDisposable
     public bool HostMode { get; set; }
     private byte _onboard;
     public string Name { get; private set; } = "";
-    public string Status { get; private set; } = "Miš nije pronađen.";
+    public string Status { get; private set; } = L.T("Miš nije pronađen.");
     /// <summary>Broj zona kojima program upravlja: pojedine LED-ice (0x8081) ili klasteri (0x8071).</summary>
     public int ClusterCount { get { lock (_lock) return _ledZones.Count > 0 ? _ledZones.Count : _clusters.Count; } }
 
@@ -54,7 +54,7 @@ public sealed class LogitechMouse : IDisposable
             if (_dev != null) return true;
             List<HidDeviceInfo> all;
             try { all = HidEnumerator.Enumerate(G815Keyboard.LogitechVid); }
-            catch (Exception ex) { Status = "Enumeracija nije uspjela: " + ex.Message; return false; }
+            catch (Exception ex) { Status = L.T("Enumeracija nije uspjela: ") + ex.Message; return false; }
 
             var candidates = all
                 .Where(d => d.OutputReportLength == 20 && !G815Keyboard.SupportedPids.Contains(d.ProductId) && d.UsagePage >= 0xFF00)
@@ -85,7 +85,7 @@ public sealed class LogitechMouse : IDisposable
 
                         _dev = dev;
                         Name = name;
-                        Status = $"Spojeno: {name} ({(_v8071 ? "0x8071" : "0x8070")}, {_clusters.Count} zon{(_clusters.Count == 1 ? "a" : "e")}, indeks 0x{idx:X2})";
+                        Status = L.F("Spojeno: {0}", name) + $" ({(_v8071 ? "0x8071" : "0x8070")}, {_clusters.Count} × " + L.T("zona") + $", 0x{idx:X2})";
                         Log.Write("Miš: " + Status);
                         dev.Disconnected += OnDisconnected;
                         StartThread();
@@ -101,8 +101,8 @@ public sealed class LogitechMouse : IDisposable
                 }
             }
             Status = sawMouseWithoutRgb
-                ? "Miš je pronađen, ali nema RGB osvjetljenje (npr. G502 X LIGHTSPEED bez oznake PLUS)."
-                : "Miš s RGB osvjetljenjem nije pronađen (je li uključen i spojen prijamnik?).";
+                ? L.T("Miš je pronađen, ali nema RGB osvjetljenje (npr. G502 X LIGHTSPEED bez oznake PLUS).")
+                : L.T("Miš s RGB osvjetljenjem nije pronađen (je li uključen i spojen prijamnik?).");
             return false;
         }
     }
@@ -422,7 +422,7 @@ public sealed class LogitechMouse : IDisposable
         {
             dev = _dev;
             _dev = null;
-            Status = "Miš odspojen ili spava – ponovno spajanje…";
+            Status = L.T("Miš odspojen ili spava – ponovno spajanje…");
         }
         _stop = true;
         if (dev != null)
@@ -449,7 +449,7 @@ public sealed class LogitechMouse : IDisposable
         {
             dev = _dev;
             _dev = null;
-            Status = "Upravljanje mišem isključeno.";
+            Status = L.T("Upravljanje mišem isključeno.");
         }
         if (dev == null) return;
         dev.Disconnected -= OnDisconnected;

@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Win32;
 
-namespace G815Studio;
+namespace Svitac;
 
 public enum EffectType
 {
@@ -118,14 +118,14 @@ public sealed class MacroStep
 
     public override string ToString() => Type switch
     {
-        StepType.KeyPress => $"⇅ Pritisni  {KeyName(Vk)}",
-        StepType.KeyDown => $"↓ Spusti  {KeyName(Vk)}",
-        StepType.KeyUp => $"↑ Otpusti  {KeyName(Vk)}",
-        StepType.Delay => $"⏱ Čekaj  {DelayMs} ms",
-        StepType.Text => $"✎ Upiši  \"{(Text ?? "").Replace("\r", "").Replace("\n", "⏎")}\"",
-        StepType.Run => $"▶ Pokreni  {System.IO.Path.GetFileName(Path ?? "")} {Args}",
-        StepType.Http => $"⇄ HTTP {Method ?? "GET"}  {Url}",
-        StepType.Input => $"? Unos  {{{Variable}}}  \"{Prompt}\"",
+        StepType.KeyPress => "⇅ " + L.T("Pritisni") + "  " + KeyName(Vk),
+        StepType.KeyDown => "↓ " + L.T("Spusti") + "  " + KeyName(Vk),
+        StepType.KeyUp => "↑ " + L.T("Otpusti") + "  " + KeyName(Vk),
+        StepType.Delay => "⏱ " + L.T("Čekaj") + $"  {DelayMs} ms",
+        StepType.Text => "✎ " + L.T("Upiši") + $"  \"{(Text ?? "").Replace("\r", "").Replace("\n", "⏎")}\"",
+        StepType.Run => "▶ " + L.T("Pokreni") + $"  {System.IO.Path.GetFileName(Path ?? "")} {Args}",
+        StepType.Http => $"⇄ HTTP  {Method ?? "GET"} {Url}",
+        StepType.Input => "? " + L.T("Unos") + $"  {{{Variable}}}  \"{Prompt}\"",
         _ => Type.ToString()
     };
 }
@@ -159,6 +159,8 @@ public sealed class AppSettings
     public bool RecordDelays = true;
     public Dictionary<string, int> ZoneOverrides = new();
     public int ConfigVersion;
+    /// <summary>Jezik sučelja ("hr", "en", …); prazno = prema jeziku Windowsa.</summary>
+    public string Language = "";
 
     // miš (npr. G502 X PLUS)
     public bool MouseEnabled;
@@ -194,7 +196,36 @@ public static class SettingsStore
     public static string FolderOverride { get; set; }
 
     public static string Folder => FolderOverride ??
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SVITAC");
+
+    /// <summary>Mapa postavki iz vremena kad se program zvao G815 Studio (do verzije 1.8.1).</summary>
+    public static string OldFolder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "G815Studio");
+
+    /// <summary>
+    /// Jednokratni prijelaz s imena G815 Studio: postavke, log i PawnIO oznaka kopiraju se u novu mapu
+    /// (stara ostaje netaknuta), a autostart se prebaci na novi exe.
+    /// </summary>
+    public static void MigrateFromG815Studio()
+    {
+        if (FolderOverride != null) return;
+        try
+        {
+            if (!Directory.Exists(Folder) && Directory.Exists(OldFolder))
+            {
+                foreach (var dir in Directory.GetDirectories(OldFolder, "*", SearchOption.AllDirectories))
+                    Directory.CreateDirectory(dir.Replace(OldFolder, Folder));
+                foreach (var file in Directory.GetFiles(OldFolder, "*", SearchOption.AllDirectories))
+                    File.Copy(file, file.Replace(OldFolder, Folder), false);
+                Log.Write("Postavke su prenesene iz " + OldFolder);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Write("Prijenos starih postavki nije uspio: " + ex.Message);
+        }
+        try { Autostart.MigrateOldName(); } catch { }
+    }
 
     public static string FilePath => Path.Combine(Folder, "settings.json");
 
@@ -281,7 +312,17 @@ public static class SettingsStore
 public static class Autostart
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "G815Studio";
+    private const string ValueName = "SVITAC";
+    private const string OldValueName = "G815Studio";
+
+    /// <summary>Ako je bio uključen autostart starog G815 Studija, prebaci ga na SVITAC.</summary>
+    public static void MigrateOldName()
+    {
+        using var k = Registry.CurrentUser.OpenSubKey(RunKey, true);
+        if (k?.GetValue(OldValueName) == null) return;
+        k.DeleteValue(OldValueName, false);
+        k.SetValue(ValueName, $"\"{Environment.ProcessPath}\" --tray");
+    }
 
     public static bool IsEnabled
     {

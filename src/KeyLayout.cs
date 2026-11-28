@@ -1,4 +1,4 @@
-namespace G815Studio;
+namespace Svitac;
 
 public sealed class KeyDef
 {
@@ -32,7 +32,7 @@ public sealed class KeyDef
     public float EffectX => SampleX ?? CenterX;
     public float EffectY => SampleY ?? CenterY;
     public float CenterY => Y + H / 2;
-    public override string ToString() => $"{Label}  [{Id}, zona 0x{Zone:X2}]";
+    public override string ToString() => Label + "  [" + Id + ", " + L.T("zona") + $" 0x{Zone:X2}]";
 }
 
 /// <summary>Izlaz računala kako ga crta slika: id uređaja ("pc:&lt;izlaz&gt;"), naziv i broj LED-ica.</summary>
@@ -218,11 +218,11 @@ public static class KeyLayouts
             Id = id, Label = label, DefaultZone = zone, Zone = zone, X = ox + x, Y = y, W = 1, H = 1, Group = group, Shape = "round"
         });
         // tipka za igre ima samo bijelu lampicu (zona 0x9A tipkovnica odbija), pa nije RGB tipka
-        R("BRIGHT", "Svjetlina", 0x99, 7.5f, 0.3f, "top");
-        R("MEDIA_PREV", "Prethodna", 0x9E, 18.5f, oy, "media");
-        R("MEDIA_PLAY", "Play/Pauza", 0x9B, 19.5f, oy, "media");
-        R("MEDIA_NEXT", "Sljedeća", 0x9D, 20.5f, oy, "media");
-        R("MEDIA_MUTE", "Utišaj", 0x9C, 21.5f, oy, "media");
+        R("BRIGHT", L.T("Svjetlina"), 0x99, 7.5f, 0.3f, "top");
+        R("MEDIA_PREV", L.T("Prethodna"), 0x9E, 18.5f, oy, "media");
+        R("MEDIA_PLAY", L.T("Play/Pauza"), 0x9B, 19.5f, oy, "media");
+        R("MEDIA_NEXT", L.T("Sljedeća"), 0x9D, 20.5f, oy, "media");
+        R("MEDIA_MUTE", L.T("Utišaj"), 0x9C, 21.5f, oy, "media");
 
         // Zone miša: LED-ice nacrtanog miša (traka u luku preko stražnjeg dijela), pa efekti (val, vatra…)
         // "prelaze" i na miš. Ne šalju se tipkovnici (zone 0xF0+). Miš se može premjestiti po slici.
@@ -235,10 +235,10 @@ public static class KeyLayouts
             var (cx, cy) = MouseLed(mp?.Reverse == true ? n - 1 - i : i, n, mx, my);
             keys.Add(new KeyDef
             {
-                Id = "MOUSE" + i, Label = "Miš " + (i + 1), DefaultZone = z, Zone = z,
+                Id = "MOUSE" + i, Label = L.T("Miš") + " " + (i + 1), DefaultZone = z, Zone = z,
                 X = cx - MouseLedSize / 2, Y = cy - MouseLedSize / 2, W = MouseLedSize, H = MouseLedSize,
                 Group = "mouse", Shape = "mouse",
-                Device = "mouse", DeviceName = "Miš", DevX = mx, DevY = my, DevW = MouseW, DevH = MouseH
+                Device = "mouse", DeviceName = L.T("Miš"), DevX = mx, DevY = my, DevW = MouseW, DevH = MouseH
             });
         }
 

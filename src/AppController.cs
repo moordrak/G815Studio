@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>Središnja logika: povezuje tipkovnicu, efekte, makroe, profile i postavke. Živi na UI niti.</summary>
 public sealed class AppController : IDisposable
@@ -70,7 +70,7 @@ public sealed class AppController : IDisposable
         Keyboard.MrPressed += () => _ui.Post(_ => OnMr(), null);
         Keyboard.Disconnected += () => _ui.Post(_ => OnDisconnected(), null);
         Hook.KeyEvent += OnHookKey;
-        Player.Error += msg => _ui.Post(_ => Notify?.Invoke("Greška makroa: " + msg), null);
+        Player.Error += msg => _ui.Post(_ => Notify?.Invoke(L.T("Greška makroa: ") + msg), null);
         Player.Info += msg => _ui.Post(_ => Notify?.Invoke(msg), null);
         Player.Ui = func =>
         {
@@ -125,7 +125,7 @@ public sealed class AppController : IDisposable
             {
                 Keyboard.SetMLeds(1 << (Bank - 1));
                 Engine.ForceResend();
-                Notify?.Invoke("Tipkovnica spojena: " + Keyboard.DeviceName);
+                Notify?.Invoke(L.T("Tipkovnica spojena: ") + Keyboard.DeviceName);
             }
             if (ok || previous != err) StateChanged?.Invoke();
         }, scheduler);
@@ -256,7 +256,7 @@ public sealed class AppController : IDisposable
         if (target != EffectiveProfile)
         {
             Apply(target);
-            if (match != null) Notify?.Invoke($"Profil: {target.Name}");
+            if (match != null) Notify?.Invoke(L.F("Profil: {0}", target.Name));
         }
     }
 
@@ -320,16 +320,16 @@ public sealed class AppController : IDisposable
             UpdateHook();
             if (steps.Count == 0)
             {
-                Notify?.Invoke("Ništa nije snimljeno.");
+                Notify?.Invoke(L.T("Ništa nije snimljeno."));
             }
             else
             {
                 var m = GetOrCreateMacro(EffectiveProfile, Bank, g);
                 m.Steps = steps;
-                if (string.IsNullOrWhiteSpace(m.Name)) m.Name = $"Snimljeno {DateTime.Now:dd.MM. HH:mm}";
+                if (string.IsNullOrWhiteSpace(m.Name)) m.Name = L.F("Snimljeno {0:dd.MM. HH:mm}", DateTime.Now);
                 SaveSoon();
                 MacrosChanged?.Invoke();
-                Notify?.Invoke($"Makro spremljen na M{Bank} / G{g} (profil {EffectiveProfile.Name}).");
+                Notify?.Invoke(L.F("Makro spremljen na M{0} / G{1} (profil {2}).", Bank, g, EffectiveProfile.Name));
             }
             StateChanged?.Invoke();
             return;
@@ -347,7 +347,7 @@ public sealed class AppController : IDisposable
         if (HardwareRecording)
         {
             CancelHardwareRecording();
-            Notify?.Invoke("Snimanje otkazano.");
+            Notify?.Invoke(L.T("Snimanje otkazano."));
             return;
         }
         if (Recorder.IsRecording) return; // već snima iz sučelja
@@ -355,7 +355,7 @@ public sealed class AppController : IDisposable
         HardwareRecording = true;
         UpdateHook();
         Keyboard.SetMrLed(true);
-        Notify?.Invoke($"Snimam makro (M{Bank}). Pritisni G tipku za spremanje ili MR za odustajanje.");
+        Notify?.Invoke(L.F("Snimam makro (M{0}). Pritisni G tipku za spremanje ili MR za odustajanje.", Bank));
         StateChanged?.Invoke();
     }
 
@@ -449,7 +449,7 @@ public sealed class AppController : IDisposable
         int mz = MouseZonesForLayout();
         if (mz != _mouseZonesInLayout) RebuildKeys();
         ApplyMouseMode();
-        if (Mouse.IsConnected) Notify?.Invoke("Miš spojen: " + Mouse.Name);
+        if (Mouse.IsConnected) Notify?.Invoke(L.T("Miš spojen: ") + Mouse.Name);
         StateChanged?.Invoke();
     }
 
@@ -539,7 +539,7 @@ public sealed class AppController : IDisposable
         if (_disposed) return;
         if (PcLayoutKey(PcChannelsForLayout()) != _pcLayoutKey) RebuildKeys();
         ApplyPcMode();
-        if (Pc.IsConnected) Notify?.Invoke("Računalo spojeno: " + Pc.Name);
+        if (Pc.IsConnected) Notify?.Invoke(L.T("Računalo spojeno: ") + Pc.Name);
         StateChanged?.Invoke();
     }
 
@@ -562,9 +562,9 @@ public sealed class AppController : IDisposable
     }
 
     public string RamStatus =>
-        !Settings.RamEnabled ? "Isključeno." :
-        !PawnIoHost.IsElevated ? "Za memoriju program mora raditi kao administrator." :
-        _ramConnecting ? "Spajam…" : Ram.Status;
+        !Settings.RamEnabled ? L.T("Isključeno.") :
+        !PawnIoHost.IsElevated ? L.T("Za memoriju program mora raditi kao administrator.") :
+        _ramConnecting ? L.T("Spajam…") : Ram.Status;
 
     public void RamSettingsChanged()
     {

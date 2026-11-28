@@ -18,7 +18,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Publish
-        run: dotnet publish G815Studio.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+        run: dotnet publish SVITAC.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
       - name: Rezolucija zaslona
         shell: pwsh
         continue-on-error: true
@@ -26,7 +26,7 @@ jobs:
       - name: Snimke zaslona
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath "publish\G815Studio.exe" -ArgumentList "--screenshots","docs\screenshots" -PassThru
+          $p = Start-Process -FilePath "publish\SVITAC.exe" -ArgumentList "--screenshots","docs\screenshots" -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill(); Write-Error "Isteklo vrijeme" }
           Get-ChildItem docs\screenshots
       - name: Spremi slike u repozitorij

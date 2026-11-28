@@ -7,13 +7,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <AssemblyName>G815Studio</AssemblyName>
-    <RootNamespace>G815Studio</RootNamespace>
+    <AssemblyName>SVITAC</AssemblyName>
+    <RootNamespace>Svitac</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationVisualStyles>true</ApplicationVisualStyles>
-    <Version>1.8.1</Version>
-    <Product>G815 Studio</Product>
-    <Description>Zamjena za Logitech G HUB za G815 LIGHTSYNC tipkovnicu</Description>
+    <Version>2.0.0</Version>
+    <Product>SVITAC</Product>
+    <AssemblyTitle>SVITAC</AssemblyTitle>
+    <Company>moordrak</Company>
+    <ApplicationIcon>res\svitac.ico</ApplicationIcon>
+    <Description>SVITAC – upravljanje RGB rasvjetom (Logitech G815, G502 X PLUS, ASRock Polychrome, Kingston Fury)</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <NoWarn>CA1416;CS8632</NoWarn>
   </PropertyGroup>
@@ -22,6 +25,13 @@
     <!-- PawnIO (službeni instalacijski program i SMBus modul), vidi third_party/pawnio/README.md -->
     <EmbeddedResource Include="third_party\pawnio\PawnIO_setup.exe" LogicalName="PawnIO_setup.exe" />
     <EmbeddedResource Include="third_party\pawnio\SmbusI801.bin" LogicalName="SmbusI801.bin" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ikona, fontovi (OFL, vidi res/fonts/OFL.txt) i prijevodi sučelja -->
+    <EmbeddedResource Include="res\svitac.ico" LogicalName="svitac.ico" />
+    <EmbeddedResource Include="res\fonts\*.ttf" LogicalName="font.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="res\lang\*.json" LogicalName="lang.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

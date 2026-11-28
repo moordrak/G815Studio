@@ -1,7 +1,7 @@
 # PawnIO (treća strana)
 
-G815 Studio koristi PawnIO za pristup SMBus-u (RGB na Kingston Fury memoriji). Datoteke su ugrađene u exe i
-raspakiraju se u `%APPDATA%\G815Studio\PawnIO`. Program PawnIO instalira pri pokretanju (ako već nije instaliran)
+SVITAC koristi PawnIO za pristup SMBus-u (RGB na Kingston Fury memoriji). Datoteke su ugrađene u exe i
+raspakiraju se u `%APPDATA%\SVITAC\PawnIO`. Program PawnIO instalira pri pokretanju (ako već nije instaliran)
 i deinstalira pri izlazu.
 
 | Datoteka | Izvor | Licenca | SHA-256 |

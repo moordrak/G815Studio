@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace G815Studio;
+namespace Svitac;
 
 public sealed class MainForm : Form
 {
@@ -17,15 +17,19 @@ public sealed class MainForm : Form
     // okvir (bočni izbornik, zaglavlje)
     private readonly List<(NavButton Nav, Control Page, string Title, string Subtitle)> _pages = new();
     private Panel _host;
-    private Label _title, _subtitle, _pill;
-    private readonly Button[] _sideBank = new Button[3];
+    private Panel _header;
+    private string _titleText = "", _subtitleText = "";
+    private readonly HexButton[] _sideBank = new HexButton[3];
+    private TeleBox _tFps, _tPackets, _tSend, _tBusy;
+    private DeviceChip _chipKb, _chipMouse, _chipPc, _chipRam;
     private readonly List<EffectTile> _tiles = new();
 
     // osvjetljenje
     private KeyboardView _kbView;
     internal KeyboardView KeyboardViewForScreenshots => _kbView;
-    private ComboBox _effectCombo, _dirCombo;
-    private TrackBar _speed, _bright;
+    private ComboBox _effectCombo;
+    private SegmentBar _dirCombo;
+    private Dial _speed, _bright;
     private Button _c1Btn, _c2Btn, _c3Btn, _c4Btn, _bgBtn, _brushBtn;
     private CheckBox _fourChk;
     private Color _brush = Color.FromArgb(255, 40, 40);
@@ -50,7 +54,7 @@ public sealed class MainForm : Form
     // postavke
     private CheckBox _autostart, _zoneTest, _lightsOffOnExit, _lightsOffWithDisplays;
     private List<KeyDef> _shownKeys;
-    private ComboBox _layoutCombo, _zoneKey;
+    private ComboBox _layoutCombo, _zoneKey, _langCombo;
     private NumericUpDown _fps, _zoneNum;
     private Label _devInfo;
     private CheckBox _zoneAuto;
@@ -80,56 +84,56 @@ public sealed class MainForm : Form
     // koje boje i postavke koristi pojedini efekt (null = ne koristi)
     private static readonly Dictionary<EffectType, (string C1, string C2, string Bg, bool RainbowOpt, bool Speed, bool Dir, string Note)> Slots = new()
     {
-        [EffectType.Static] = ("Zadana boja tipki", null, null, false, false, false, "Boje pojedinih tipki mijenjaš kistom."),
-        [EffectType.Breathing] = ("Zadana boja tipki", null, null, false, true, false, "Dišu boje po tipkama; kistom obojene tipke zadržavaju svoju boju."),
-        [EffectType.Wave] = ("Boja 1", "Boja 2", null, true, true, true, null),
-        [EffectType.ColorCycle] = ("Boja 1", "Boja 2", null, true, true, false, null),
-        [EffectType.Reactive] = ("Osnovna boja", "Boja pritiska", null, false, true, false, null),
-        [EffectType.Ripple] = ("Osnovna boja", "Boja vala", null, false, true, false, null),
-        [EffectType.Audio] = ("Sredina (tiho)", "Rubovi (glasno)", "Pozadina", false, true, false, "Brzina = koliko brzo razina pada."),
-        [EffectType.Screen] = (null, null, null, false, false, false, "Boje dolaze sa zaslona."),
-        [EffectType.Off] = (null, null, null, false, false, false, "Sve tipke su ugašene."),
-        [EffectType.Spectrum] = ("Dno stupca", "Vrh stupca", "Pozadina", false, true, false, "Brzina = koliko brzo stupci padaju."),
-        [EffectType.BassPulse] = ("Udarac 1", "Udarac 2", "Pozadina", false, true, false, "Brzina = koliko brzo bljesak nestaje."),
-        [EffectType.Swirl] = ("Boja 1", "Boja 2", null, true, true, false, null),
-        [EffectType.RadialRainbow] = ("Boja 1", "Boja 2", null, true, true, false, null),
-        [EffectType.GradientWave] = ("Boja A", "Boja B", null, false, true, true, null),
-        [EffectType.Starry] = ("Zvijezda 1", "Zvijezda 2", "Nebo", false, true, false, null),
-        [EffectType.Rain] = ("Kapi", "Vrh kapi", "Pozadina", false, true, false, null),
-        [EffectType.Fire] = ("Plamen", "Vrhovi plamena", "Pozadina", false, true, false, null),
-        [EffectType.Visor] = ("Traka", "Trag", "Pozadina", false, true, true, null),
-        [EffectType.Lightning] = ("Munja", "Odsjaj", "Pozadina", false, true, false, null),
-        [EffectType.Mosaic] = ("Boja 1", "Boja 2", null, true, true, false, "Uključena duga = nasumične boje; isključena = nijanse između Boje 1 i Boje 2."),
+        [EffectType.Static] = (L.N("Zadana boja tipki"), null, null, false, false, false, L.N("Boje pojedinih tipki mijenjaš kistom.")),
+        [EffectType.Breathing] = (L.N("Zadana boja tipki"), null, null, false, true, false, L.N("Dišu boje po tipkama; kistom obojene tipke zadržavaju svoju boju.")),
+        [EffectType.Wave] = (L.N("Boja 1"), L.N("Boja 2"), null, true, true, true, null),
+        [EffectType.ColorCycle] = (L.N("Boja 1"), L.N("Boja 2"), null, true, true, false, null),
+        [EffectType.Reactive] = (L.N("Osnovna boja"), L.N("Boja pritiska"), null, false, true, false, null),
+        [EffectType.Ripple] = (L.N("Osnovna boja"), L.N("Boja vala"), null, false, true, false, null),
+        [EffectType.Audio] = (L.N("Sredina (tiho)"), L.N("Rubovi (glasno)"), L.N("Pozadina"), false, true, false, L.N("Brzina = koliko brzo razina pada.")),
+        [EffectType.Screen] = (null, null, null, false, false, false, L.N("Boje dolaze sa zaslona.")),
+        [EffectType.Off] = (null, null, null, false, false, false, L.N("Sve tipke su ugašene.")),
+        [EffectType.Spectrum] = (L.N("Dno stupca"), L.N("Vrh stupca"), L.N("Pozadina"), false, true, false, L.N("Brzina = koliko brzo stupci padaju.")),
+        [EffectType.BassPulse] = (L.N("Udarac 1"), L.N("Udarac 2"), L.N("Pozadina"), false, true, false, L.N("Brzina = koliko brzo bljesak nestaje.")),
+        [EffectType.Swirl] = (L.N("Boja 1"), L.N("Boja 2"), null, true, true, false, null),
+        [EffectType.RadialRainbow] = (L.N("Boja 1"), L.N("Boja 2"), null, true, true, false, null),
+        [EffectType.GradientWave] = (L.N("Boja A"), L.N("Boja B"), null, false, true, true, null),
+        [EffectType.Starry] = (L.N("Zvijezda 1"), L.N("Zvijezda 2"), L.N("Nebo"), false, true, false, null),
+        [EffectType.Rain] = (L.N("Kapi"), L.N("Vrh kapi"), L.N("Pozadina"), false, true, false, null),
+        [EffectType.Fire] = (L.N("Plamen"), L.N("Vrhovi plamena"), L.N("Pozadina"), false, true, false, null),
+        [EffectType.Visor] = (L.N("Traka"), L.N("Trag"), L.N("Pozadina"), false, true, true, null),
+        [EffectType.Lightning] = (L.N("Munja"), L.N("Odsjaj"), L.N("Pozadina"), false, true, false, null),
+        [EffectType.Mosaic] = (L.N("Boja 1"), L.N("Boja 2"), null, true, true, false, L.N("Uključena duga = nasumične boje; isključena = nijanse između Boje 1 i Boje 2.")),
     };
 
     private static readonly (EffectType Type, string Name, string Help)[] Effects =
     {
-        (EffectType.Static, "Statično (boje po tipkama)", "Svaka tipka ima svoju boju (Boja 1 je zadana). Oboji tipke dolje."),
-        (EffectType.Breathing, "Disanje", "Boje po tipkama polako se pale i gase. Brzina = tempo."),
-        (EffectType.Wave, "Duga – val", "Dugin val preko tipkovnice. Odaberi smjer i brzinu."),
-        (EffectType.ColorCycle, "Izmjena boja", "Cijela tipkovnica mijenja boju kroz spektar."),
-        (EffectType.Reactive, "Reakcija na pritisak", "Pritisnuta tipka zasvijetli Bojom 2 i polako se vrati na svoju boju."),
-        (EffectType.Ripple, "Valovi od pritiska", "Svaki pritisak šalje krug Boje 2 preko tipkovnice."),
-        (EffectType.Audio, "Zvuk (VU metar)", "Glasnoća zvuka sa zvučnika: od sredine prema rubovima, prijelaz Boja 1 → Boja 2, ostalo Pozadina."),
-        (EffectType.Screen, "Boje sa zaslona", "Tipke preuzimaju boje odgovarajućeg dijela glavnog zaslona."),
-        (EffectType.Off, "Isključeno", "Sve tipke ugašene."),
-        (EffectType.Spectrum, "Spektar zvuka", "Stupci prate frekvencije glazbe (lijevo bas, desno visoki tonovi). Boja 1 dolje → Boja 2 gore, ostalo Pozadina."),
-        (EffectType.BassPulse, "Bas puls", "Na svaki udarac basa tipkovnica bljesne, naizmjence Bojom 1 i Bojom 2. Brzina = koliko brzo se gasi."),
-        (EffectType.Swirl, "Spiralna duga", "Duga se okreće oko središta tipkovnice."),
-        (EffectType.RadialRainbow, "Radijalna duga", "Dugini krugovi šire se iz središta."),
-        (EffectType.GradientWave, "Gradijentni val", "Val koji prelijeva Boju 1 u Boju 2. Odaberi smjer i brzinu."),
-        (EffectType.Starry, "Zvjezdano nebo", "Nasumične tipke polako zasvijetle (između Boje 1 i Boje 2) na Pozadini."),
-        (EffectType.Rain, "Kiša / Matrix", "Kapi Boje 1 padaju niz tipkovnicu i ostavljaju trag."),
-        (EffectType.Fire, "Vatra", "Plamen se diže od donjeg reda prema gore."),
-        (EffectType.Visor, "Skener", "Traka Boje 1 putuje lijevo-desno ili gore-dolje (Smjer) preko svih uređaja i ostavlja trag, na Pozadini."),
-        (EffectType.Lightning, "Munja", "Nasumični bljeskovi Boje 1 preko cijele tipkovnice."),
-        (EffectType.Mosaic, "Mozaik", "Svaka tipka povremeno glatko prijeđe u novu nasumičnu boju.")
+        (EffectType.Static, L.N("Statično (boje po tipkama)"), L.N("Svaka tipka ima svoju boju (Boja 1 je zadana). Oboji tipke dolje.")),
+        (EffectType.Breathing, L.N("Disanje"), L.N("Boje po tipkama polako se pale i gase. Brzina = tempo.")),
+        (EffectType.Wave, L.N("Duga – val"), L.N("Dugin val preko tipkovnice. Odaberi smjer i brzinu.")),
+        (EffectType.ColorCycle, L.N("Izmjena boja"), L.N("Cijela tipkovnica mijenja boju kroz spektar.")),
+        (EffectType.Reactive, L.N("Reakcija na pritisak"), L.N("Pritisnuta tipka zasvijetli Bojom 2 i polako se vrati na svoju boju.")),
+        (EffectType.Ripple, L.N("Valovi od pritiska"), L.N("Svaki pritisak šalje krug Boje 2 preko tipkovnice.")),
+        (EffectType.Audio, L.N("Zvuk (VU metar)"), L.N("Glasnoća zvuka sa zvučnika: od sredine prema rubovima, prijelaz Boja 1 → Boja 2, ostalo Pozadina.")),
+        (EffectType.Screen, L.N("Boje sa zaslona"), L.N("Tipke preuzimaju boje odgovarajućeg dijela glavnog zaslona.")),
+        (EffectType.Off, L.N("Isključeno"), L.N("Sve tipke ugašene.")),
+        (EffectType.Spectrum, L.N("Spektar zvuka"), L.N("Stupci prate frekvencije glazbe (lijevo bas, desno visoki tonovi). Boja 1 dolje → Boja 2 gore, ostalo Pozadina.")),
+        (EffectType.BassPulse, L.N("Bas puls"), L.N("Na svaki udarac basa tipkovnica bljesne, naizmjence Bojom 1 i Bojom 2. Brzina = koliko brzo se gasi.")),
+        (EffectType.Swirl, L.N("Spiralna duga"), L.N("Duga se okreće oko središta tipkovnice.")),
+        (EffectType.RadialRainbow, L.N("Radijalna duga"), L.N("Dugini krugovi šire se iz središta.")),
+        (EffectType.GradientWave, L.N("Gradijentni val"), L.N("Val koji prelijeva Boju 1 u Boju 2. Odaberi smjer i brzinu.")),
+        (EffectType.Starry, L.N("Zvjezdano nebo"), L.N("Nasumične tipke polako zasvijetle (između Boje 1 i Boje 2) na Pozadini.")),
+        (EffectType.Rain, L.N("Kiša / Matrix"), L.N("Kapi Boje 1 padaju niz tipkovnicu i ostavljaju trag.")),
+        (EffectType.Fire, L.N("Vatra"), L.N("Plamen se diže od donjeg reda prema gore.")),
+        (EffectType.Visor, L.N("Skener"), L.N("Traka Boje 1 putuje lijevo-desno ili gore-dolje (Smjer) preko svih uređaja i ostavlja trag, na Pozadini.")),
+        (EffectType.Lightning, L.N("Munja"), L.N("Nasumični bljeskovi Boje 1 preko cijele tipkovnice.")),
+        (EffectType.Mosaic, L.N("Mozaik"), L.N("Svaka tipka povremeno glatko prijeđe u novu nasumičnu boju."))
     };
 
     public MainForm(AppController controller)
     {
         _c = controller;
-        Text = "G815 Studio";
+        Text = "SVITAC";
         Icon = IconFactory.AppIcon;
         StartPosition = FormStartPosition.CenterScreen;
         Size = new Size(1440, 940);
@@ -208,53 +212,47 @@ public sealed class MainForm : Form
     private void BuildLayout()
     {
         // ---- bočni izbornik
-        var side = new Panel { Dock = DockStyle.Left, Width = 240, BackColor = Theme.Sidebar, Padding = new Padding(16, 22, 16, 18) };
+        var side = new Panel { Dock = DockStyle.Left, Width = 244, BackColor = Theme.Sidebar, Padding = new Padding(16, 18, 16, 16) };
         side.Paint += (_, e) =>
         {
             using var p = new Pen(Theme.BorderSoft);
             e.Graphics.DrawLine(p, side.Width - 1, 0, side.Width - 1, side.Height);
         };
-        var brand = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Theme.Sidebar };
+        var brand = new Panel { Dock = DockStyle.Top, Height = 66, BackColor = Theme.Sidebar };
         brand.Paint += (_, e) =>
         {
             var g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            using (var path = Theme.Rounded(new RectangleF(4, 6, 38, 38), 10))
-            using (var b = new SolidBrush(Color.FromArgb(27, 31, 39)))
-            using (var pen = new Pen(Theme.Border))
-            {
-                g.FillPath(b, path);
-                g.DrawPath(pen, path);
-            }
-            Color[] cols = { Color.FromArgb(255, 77, 109), Color.FromArgb(255, 176, 32), Theme.Good, Theme.Accent, Color.FromArgb(160, 123, 255), Color.FromArgb(255, 77, 109) };
-            for (int i = 0; i < 6; i++)
-                using (var cb = new SolidBrush(cols[i]))
-                    g.FillRectangle(cb, 11 + (i % 3) * 8.5f, 16 + (i / 3) * 9f, 6.5f, 7f);
-            using var f1 = Theme.Heading(13f);
-            using var f2 = Theme.UiFont(8.5f);
-            TextRenderer.DrawText(g, "G815 Studio", f1, new Point(52, 8), Theme.Text);
-            TextRenderer.DrawText(g, "v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3), f2, new Point(54, 30), Theme.Muted);
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.DrawIcon(IconFactory.LogoIcon(44), new Rectangle(0, 4, 44, 44));
+            using var f1 = Theme.Heading(15f);
+            using var f2 = Theme.Mono(7.5f);
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            Theme.DrawSpaced(g, "SVITAC", f1, Theme.Text, new PointF(54, 6), 2.5f);
+            TextRenderer.DrawText(g, "v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " · RGB", f2, new Point(56, 32), Theme.Muted);
         };
 
         var nav = new FlowLayoutPanel { Dock = DockStyle.Top, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, BackColor = Theme.Sidebar, Padding = new Padding(0, 10, 0, 0) };
 
-        var bankCard = new Panel { Dock = DockStyle.Bottom, Height = 92, BackColor = Theme.Sidebar };
+        // stanje uređaja
+        var devices = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, BackColor = Theme.Sidebar, Padding = new Padding(0, 0, 0, 10) };
+        devices.Controls.Add(new Label { Text = L.T("Uređaji").ToUpperInvariant(), AutoSize = true, Font = Theme.Mono(7.5f), ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 6) });
+        _chipKb = new DeviceChip("G815");
+        _chipMouse = new DeviceChip(L.T("Miš"));
+        _chipPc = new DeviceChip("ASRock RGB");
+        _chipRam = new DeviceChip("Kingston Fury");
+        devices.Controls.AddRange(new Control[] { _chipKb, _chipMouse, _chipPc, _chipRam });
+
+        var bankCard = new Panel { Dock = DockStyle.Bottom, Height = 84, BackColor = Theme.Sidebar };
         bankCard.Paint += (_, e) =>
         {
-            var g = e.Graphics;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            using var path = Theme.Rounded(new RectangleF(0.5f, 0.5f, bankCard.Width - 1.5f, bankCard.Height - 1.5f), 12);
-            using var b = new SolidBrush(Color.FromArgb(22, 26, 33));
-            using var pen = new Pen(Theme.BorderSoft);
-            g.FillPath(b, path);
-            g.DrawPath(pen, path);
-            using var f = Theme.UiFont(8f, FontStyle.Bold);
-            TextRenderer.DrawText(g, "AKTIVNA BANKA", f, new Point(14, 12), Theme.Muted);
+            using var f = Theme.Mono(7.5f);
+            TextRenderer.DrawText(e.Graphics, L.T("Aktivna banka").ToUpperInvariant(), f, new Point(0, 4), Theme.Muted);
         };
         for (int i = 0; i < 3; i++)
         {
             int bank = i + 1;
-            var btn = new Button { Text = "M" + bank, Size = new Size(58, 36), Location = new Point(14 + i * 64, 40), TabStop = true };
+            var btn = new HexButton("M" + bank) { Location = new Point(i * 64, 26) };
             btn.Click += (_, _) => _c.SetBank(bank);
             _sideBank[i] = btn;
             bankCard.Controls.Add(btn);
@@ -262,38 +260,51 @@ public sealed class MainForm : Form
 
         side.Controls.Add(nav);
         side.Controls.Add(brand);
+        side.Controls.Add(devices);
         side.Controls.Add(bankCard);
 
-        // ---- zaglavlje
-        var header = new Panel { Dock = DockStyle.Top, Height = 92, BackColor = Theme.Ground, Padding = new Padding(32, 24, 32, 8) };
-        _title = new Label { AutoSize = true, Font = new Font("Segoe UI Semibold", 20f), ForeColor = Theme.Text, Location = new Point(30, 16) };
-        _subtitle = new Label { AutoSize = true, ForeColor = Theme.Muted, Location = new Point(34, 56) };
-        var right = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, BackColor = Theme.Ground, Padding = new Padding(0, 6, 0, 0) };
-        right.Controls.Add(new Label { Text = "Profil", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 12, 8, 0) });
-        _profileCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220, Margin = new Padding(0, 7, 14, 0) };
+        // ---- zaglavlje: naslov (HUD), telemetrija, profil
+        _header = new Panel { Dock = DockStyle.Top, Height = 100, BackColor = Theme.Ground, Padding = new Padding(32, 20, 24, 10) };
+        _header.Paint += (_, e) =>
+        {
+            var g = e.Graphics;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            using var tf = Theme.Heading(21f);
+            Theme.DrawSpaced(g, _titleText.ToUpperInvariant(), tf, Theme.Text, new PointF(30, 18), 3f);
+            using var sf = Theme.UiFont(10f);
+            TextRenderer.DrawText(g, _subtitleText, sf, new Rectangle(32, 60, Math.Max(100, _header.Width - 620), 22), Theme.TextSoft, TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+            using var p = new Pen(Theme.BorderSoft);
+            g.DrawLine(p, 24, _header.Height - 1, _header.Width - 24, _header.Height - 1);
+            Theme.GlowLine(g, new PointF(24, _header.Height - 1), new PointF(110, _header.Height - 1), Theme.Accent, 1);
+        };
+        var right = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, BackColor = Theme.Ground, Padding = new Padding(0, 4, 0, 0) };
+        _tFps = new TeleBox("FPS") { Spark = true };
+        _tPackets = new TeleBox(L.T("Paketa"), 92);
+        _tSend = new TeleBox(L.T("Slanje"), 92);
+        _tBusy = new TeleBox(L.T("Zauzeto"), 92);
+        right.Controls.AddRange(new Control[] { _tFps, _tPackets, _tSend, _tBusy });
+        var prof = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, BackColor = Theme.Ground, Margin = new Padding(12, 0, 0, 0) };
+        prof.Controls.Add(new Label { Text = L.T("Profil").ToUpperInvariant(), AutoSize = true, Font = Theme.Mono(7.5f), ForeColor = Theme.Muted, Margin = new Padding(0, 4, 0, 6) });
+        _profileCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Margin = new Padding(0) };
         _profileCombo.SelectedIndexChanged += (_, _) =>
         {
             if (_loading || _profileCombo.SelectedItem is not string name) return;
             _c.SetActiveProfile(name);
             ReloadAll();
         };
-        right.Controls.Add(_profileCombo);
-        _pill = new Label { AutoSize = false, Size = new Size(250, 38), TextAlign = ContentAlignment.MiddleCenter, Font = Theme.UiFont(9.5f, FontStyle.Bold), Margin = new Padding(0, 2, 0, 0) };
-        _pill.Paint += PaintPill;
-        right.Controls.Add(_pill);
-        header.Controls.Add(right);
-        header.Controls.Add(_title);
-        header.Controls.Add(_subtitle);
+        prof.Controls.Add(_profileCombo);
+        right.Controls.Add(prof);
+        _header.Controls.Add(right);
 
         // ---- stranice
-        _host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Ground, Padding = new Padding(24, 0, 24, 12) };
-        AddPage(nav, "Osvjetljenje", "\uE706", "Klikni ili povuci preko tipki za odabir, zatim ih oboji kistom.", BuildLightingTab());
-        AddPage(nav, "Makroi", "\uE765", "G1–G5 u tri banke. Banku na tipkovnici biraš tipkama M1, M2 i M3.", BuildMacroTab());
-        AddPage(nav, "Profili", "\uE8FD", "Svaki profil ima svoje boje i makroe; može se paliti sam prema aplikaciji.", BuildProfilesTab());
-        AddPage(nav, "Postavke", "\uE713", "Pokretanje, raspored, uređaj i ispravak zona.", BuildSettingsTab());
+        _host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Ground, Padding = new Padding(24, 12, 24, 12) };
+        AddPage(nav, L.T("Osvjetljenje"), "\uE706", L.T("Klikni ili povuci preko tipki za odabir, zatim ih oboji kistom."), BuildLightingTab());
+        AddPage(nav, L.T("Makroi"), "\uE765", L.T("G1–G5 u tri banke. Banku na tipkovnici biraš tipkama M1, M2 i M3."), BuildMacroTab());
+        AddPage(nav, L.T("Profili"), "\uE8FD", L.T("Svaki profil ima svoje boje i makroe; može se paliti sam prema aplikaciji."), BuildProfilesTab());
+        AddPage(nav, L.T("Postavke"), "\uE713", L.T("Pokretanje, jezik, raspored, uređaji i ispravak zona."), BuildSettingsTab());
 
         // ---- statusna traka
-        var status = new StatusStrip { BackColor = Theme.Sidebar, ForeColor = Theme.TextSoft, Renderer = new DarkRenderer(), SizingGrip = false };
+        var status = new StatusStrip { BackColor = Theme.Sidebar, ForeColor = Theme.TextSoft, Renderer = new DarkRenderer(), SizingGrip = false, Font = Theme.Mono(8f) };
         _stDevice = new ToolStripStatusLabel { AutoSize = true };
         _stProfile = new ToolStripStatusLabel { AutoSize = true, Margin = new Padding(16, 3, 0, 2) };
         _stBank = new ToolStripStatusLabel { AutoSize = true, Margin = new Padding(16, 3, 0, 2) };
@@ -301,7 +312,7 @@ public sealed class MainForm : Form
         status.Items.AddRange(new ToolStripItem[] { _stDevice, _stProfile, _stBank, _stInfo });
 
         Controls.Add(_host);
-        Controls.Add(header);
+        Controls.Add(_header);
         Controls.Add(side);
         Controls.Add(status);
         ShowPage(0);
@@ -319,8 +330,11 @@ public sealed class MainForm : Form
         _pages.Add((btn, page, title, subtitle));
     }
 
+    internal int CurrentPage { get; private set; }
+
     internal void ShowPage(int index)
     {
+        CurrentPage = index;
         for (int i = 0; i < _pages.Count; i++)
         {
             var (nav, page, _, _) = _pages[i];
@@ -328,32 +342,9 @@ public sealed class MainForm : Form
             nav.Invalidate();
             page.Visible = i == index;
         }
-        _title.Text = _pages[index].Title;
-        _subtitle.Text = _pages[index].Subtitle;
-    }
-
-    private void PaintPill(object sender, PaintEventArgs e)
-    {
-        var g = e.Graphics;
-        g.Clear(Theme.Ground);
-        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        bool ok = _c.Keyboard.IsConnected;
-        var back = ok ? Color.FromArgb(18, 38, 28) : Color.FromArgb(40, 20, 24);
-        var border = ok ? Color.FromArgb(31, 74, 51) : Color.FromArgb(90, 40, 48);
-        var fore = ok ? Color.FromArgb(158, 230, 189) : Color.FromArgb(255, 150, 160);
-        using (var path = Theme.Rounded(new RectangleF(0.5f, 0.5f, _pill.Width - 1.5f, _pill.Height - 1.5f), 10))
-        using (var b = new SolidBrush(back))
-        using (var p = new Pen(border))
-        {
-            g.FillPath(b, path);
-            g.DrawPath(p, path);
-        }
-        using (var dot = new SolidBrush(ok ? Theme.Good : Theme.Danger))
-            g.FillEllipse(dot, 14, _pill.Height / 2 - 4, 8, 8);
-        string text = ok
-            ? $"G815 spojena" + (_c.Engine.MeasuredFps > 0 ? $" · {_c.Engine.MeasuredFps:0} FPS" : "")
-            : "Tipkovnica nije spojena";
-        TextRenderer.DrawText(g, text, _pill.Font, new Rectangle(28, 0, _pill.Width - 34, _pill.Height), fore, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+        _titleText = _pages[index].Title;
+        _subtitleText = _pages[index].Subtitle;
+        _header?.Invalidate();
     }
 
     private Control BuildLightingTab()
@@ -379,11 +370,11 @@ public sealed class MainForm : Form
         // --- efekt
         var fx = Ui.Flow(FlowDirection.TopDown);
         _effectCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260, Visible = false };
-        foreach (var e in Effects) _effectCombo.Items.Add(e.Name);
+        foreach (var e in Effects) _effectCombo.Items.Add(L.T(e.Name));
         _effectCombo.SelectedIndexChanged += (_, _) =>
         {
             if (_effectCombo.SelectedIndex < 0) return;
-            _effectHelp.Text = Effects[_effectCombo.SelectedIndex].Help;
+            _effectHelp.Text = L.T(Effects[_effectCombo.SelectedIndex].Help);
             _dirCombo.Enabled = Effects[_effectCombo.SelectedIndex].Type is EffectType.Wave or EffectType.GradientWave or EffectType.Visor;
             for (int t = 0; t < _tiles.Count; t++) { _tiles[t].Selected = t == _effectCombo.SelectedIndex; _tiles[t].Invalidate(); }
             if (_loading) return;
@@ -417,8 +408,8 @@ public sealed class MainForm : Form
             new[] { H("#0b0d12"), H("#ffffff"), H("#0b0d12") },
             new[] { H("#ff3b5c"), H("#3ddc84"), H("#ffe14d"), H("#8b7bff"), H("#34d0ff") }
         };
-        string[] shortNames = { "Statično", "Disanje", "Val duge", "Izmjena boja", "Reakcija", "Valovi", "Zvuk (VU)", "Zaslon", "Isključeno",
-                                "Spektar", "Bas puls", "Spirala", "Radijalna", "Gradijent", "Zvijezde", "Kiša", "Vatra", "Skener", "Munja", "Mozaik" };
+        string[] shortNames = { L.T("Statično"), L.T("Disanje"), L.T("Val duge"), L.T("Izmjena boja"), L.T("Reakcija"), L.T("Valovi"), L.T("Zvuk (VU)"), L.T("Zaslon"), L.T("Isključeno"),
+                                L.T("Spektar"), L.T("Bas puls"), L.T("Spirala"), L.T("Radijalna"), L.T("Gradijent"), L.T("Zvijezde"), L.T("Kiša"), L.T("Vatra"), L.T("Skener"), L.T("Munja"), L.T("Mozaik") };
         for (int i = 0; i < Effects.Length; i++)
         {
             int idx = i;
@@ -432,28 +423,28 @@ public sealed class MainForm : Form
         fx.Controls.Add(_effectHelp);
         var param = Ui.Flow(FlowDirection.TopDown);
 
-        param.Controls.Add(Ui.Lbl("Brzina"));
-        _speed = new TrackBar { Minimum = 1, Maximum = 100, TickFrequency = 10, Width = 280, TickStyle = TickStyle.None };
+        var dials = Ui.Flow();
+        _speed = new Dial(L.T("Brzina")) { Minimum = 1, Maximum = 100, Margin = new Padding(0, 0, 18, 0) };
         _speed.ValueChanged += (_, _) => { if (_loading) return; P.Lighting.Current.Speed = _speed.Value; _c.LightingChanged(P); };
-        param.Controls.Add(_speed);
-
-        param.Controls.Add(Ui.Lbl("Svjetlina"));
-        _bright = new TrackBar { Minimum = 0, Maximum = 100, TickFrequency = 10, Width = 280, TickStyle = TickStyle.None };
+        _bright = new Dial(L.T("Svjetlina")) { Minimum = 0, Maximum = 100, Margin = new Padding(0) };
         _bright.ValueChanged += (_, _) => { if (_loading) return; P.Lighting.Brightness = _bright.Value; _c.LightingChanged(P); };
-        param.Controls.Add(_bright);
+        dials.Controls.Add(_speed);
+        dials.Controls.Add(_bright);
+        param.Controls.Add(dials);
 
-        param.Controls.Add(Ui.Lbl("Smjer vala"));
-        _dirCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
-        _dirCombo.Items.AddRange(new object[] { "Lijevo → desno", "Desno → lijevo", "Gore → dolje", "Iz središta", "Dolje → gore" });
+        param.Controls.Add(Ui.Lbl(L.T("Smjer vala")));
+        _dirCombo = new SegmentBar(new[] { "→", "←", "↓", "◎", "↑" },
+            new[] { L.T("Lijevo → desno"), L.T("Desno → lijevo"), L.T("Gore → dolje"), L.T("Iz središta"), L.T("Dolje → gore") })
+        { Width = 254, Margin = new Padding(3, 3, 3, 3) };
         _dirCombo.SelectedIndexChanged += (_, _) => { if (_loading) return; P.Lighting.Current.Direction = _dirCombo.SelectedIndex; _c.LightingChanged(P); };
         param.Controls.Add(_dirCombo);
-        controls.Controls.Add(Ui.Group("Efekt", fx));
-        controls.Controls.Add(Ui.Group("Parametri", param));
+        controls.Controls.Add(Ui.Group(L.T("Efekt"), fx));
+        controls.Controls.Add(Ui.Group(L.T("Parametri"), param));
 
         // --- boje efekta
         var cols = Ui.Flow(FlowDirection.TopDown);
         _colorsTitle = new Label { AutoSize = true, Font = Theme.UiFont(10f, FontStyle.Bold), ForeColor = Theme.Text, Margin = new Padding(3, 0, 3, 8) };
-        _rainbowChk = new CheckBox { Text = "Duga (isključi za vlastite boje)", AutoSize = true, Margin = new Padding(3, 2, 3, 8) };
+        _rainbowChk = new CheckBox { Text = L.T("Duga (isključi za vlastite boje)"), AutoSize = true, Margin = new Padding(3, 2, 3, 8) };
         _rainbowChk.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
@@ -461,9 +452,9 @@ public sealed class MainForm : Form
             UpdateColorButtons();
             _c.LightingChanged(P);
         };
-        _c1Btn = Ui.Btn("Boja 1", (_, _) => PickConfigColor(1), 250);
-        _c2Btn = Ui.Btn("Boja 2", (_, _) => PickConfigColor(2), 250);
-        _fourChk = new CheckBox { Text = "Četiri boje u prijelazu", AutoSize = true, Margin = new Padding(3, 4, 3, 4) };
+        _c1Btn = Ui.Btn(L.T("Boja 1"), (_, _) => PickConfigColor(1), 250);
+        _c2Btn = Ui.Btn(L.T("Boja 2"), (_, _) => PickConfigColor(2), 250);
+        _fourChk = new CheckBox { Text = L.T("Četiri boje u prijelazu"), AutoSize = true, Margin = new Padding(3, 4, 3, 4) };
         _fourChk.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
@@ -477,9 +468,9 @@ public sealed class MainForm : Form
             UpdateColorButtons();
             _c.LightingChanged(P);
         };
-        _c3Btn = Ui.Btn("Boja 3", (_, _) => PickConfigColor(4), 250);
-        _c4Btn = Ui.Btn("Boja 4", (_, _) => PickConfigColor(5), 250);
-        _bgBtn = Ui.Btn("Pozadina", (_, _) => PickConfigColor(3), 250);
+        _c3Btn = Ui.Btn(L.T("Boja 3"), (_, _) => PickConfigColor(4), 250);
+        _c4Btn = Ui.Btn(L.T("Boja 4"), (_, _) => PickConfigColor(5), 250);
+        _bgBtn = Ui.Btn(L.T("Pozadina"), (_, _) => PickConfigColor(3), 250);
         _colorsNote = new Label { AutoSize = true, MaximumSize = new Size(250, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 0) };
         cols.Controls.Add(_colorsTitle);
         cols.Controls.Add(_rainbowChk);
@@ -490,41 +481,41 @@ public sealed class MainForm : Form
         cols.Controls.Add(_c4Btn);
         cols.Controls.Add(_bgBtn);
         cols.Controls.Add(_colorsNote);
-        cols.Controls.Add(Ui.Btn("Zadane boje ovog efekta", (_, _) => ResetEffectColors(false), 250));
-        cols.Controls.Add(Ui.Btn("Zadane boje svih efekata", (_, _) => ResetEffectColors(true), 250));
-        controls.Controls.Add(Ui.Group("Boje efekta", cols));
+        cols.Controls.Add(Ui.Btn(L.T("Zadane boje ovog efekta"), (_, _) => ResetEffectColors(false), 250));
+        cols.Controls.Add(Ui.Btn(L.T("Zadane boje svih efekata"), (_, _) => ResetEffectColors(true), 250));
+        controls.Controls.Add(Ui.Group(L.T("Boje efekta"), cols));
 
         // --- bojanje tipki
         var paint = Ui.Flow(FlowDirection.TopDown);
-        _brushBtn = Ui.Btn("Kist: odaberi boju…", (_, _) =>
+        _brushBtn = Ui.Btn(L.T("Kist: odaberi boju…"), (_, _) =>
         {
             var c = Ui.PickColor(this, _brush);
             if (c.HasValue) { _brush = c.Value; Ui.PaintSwatch(_brushBtn, _brush); }
         }, 250);
         Ui.PaintSwatch(_brushBtn, _brush);
         paint.Controls.Add(_brushBtn);
-        paint.Controls.Add(Primary(Ui.Btn("Oboji odabrane tipke", (_, _) => PaintSelected(_brush), 250)));
-        paint.Controls.Add(Ui.Btn("Vrati odabrane na Boju 1", (_, _) => PaintSelected(null), 250));
-        paint.Controls.Add(Ui.Btn("Oboji SVE tipke kistom", (_, _) =>
+        paint.Controls.Add(Primary(Ui.Btn(L.T("Oboji odabrane tipke"), (_, _) => PaintSelected(_brush), 250)));
+        paint.Controls.Add(Ui.Btn(L.T("Vrati odabrane na Boju 1"), (_, _) => PaintSelected(null), 250));
+        paint.Controls.Add(Ui.Btn(L.T("Oboji SVE tipke kistom"), (_, _) =>
         {
             foreach (var k in _c.Keys) P.Lighting.KeyColors[k.Id] = ColorUtil.ToHex(_brush);
             _c.LightingChanged(P);
         }, 250));
-        paint.Controls.Add(Ui.Btn("Obriši sve boje po tipkama", (_, _) =>
+        paint.Controls.Add(Ui.Btn(L.T("Obriši sve boje po tipkama"), (_, _) =>
         {
             P.Lighting.KeyColors.Clear();
             _c.LightingChanged(P);
         }, 250));
         _selInfo = new Label { AutoSize = false, Width = 250, Height = 36, ForeColor = SystemColors.GrayText };
         paint.Controls.Add(_selInfo);
-        controls.Controls.Add(Ui.Group("Boje po tipkama", paint));
+        controls.Controls.Add(Ui.Group(L.T("Boje po tipkama"), paint));
 
         // --- brzi odabir
         var quick = Ui.Flow(FlowDirection.TopDown);
-        quick.Controls.Add(Ui.Lbl("Klik = jedna tipka, povlačenje = više,\nCtrl+klik = dodaj/makni."));
+        quick.Controls.Add(Ui.Lbl(L.T("Klik = jedna tipka, povlačenje = više,\nCtrl+klik = dodaj/makni.")));
         void Q(string text, Func<KeyDef, bool> pred) =>
             quick.Controls.Add(Ui.Btn(text, (_, _) => _kbView.SelectWhere(pred, (ModifierKeys & Keys.Control) != 0), 200));
-        Q("Sve", _ => true);
+        Q(L.T("Sve"), _ => true);
         Q("Slova", k => k.Group == "letters");
         Q("Brojevi", k => k.Group == "num");
         Q("F tipke + Esc", k => k.Group == "f");
@@ -538,12 +529,12 @@ public sealed class MainForm : Form
         Q("Miš", k => k.Group == "mouse");
         Q("Računalo", k => k.Group == "pc");
         Q("Memorija", k => k.Group == "ram");
-        quick.Controls.Add(Ui.Btn("Poništi odabir", (_, _) => _kbView.ClearSelection(), 200));
-        controls.Controls.Add(Ui.Group("Brzi odabir (Ctrl = dodaj)", quick));
+        quick.Controls.Add(Ui.Btn(L.T("Poništi odabir"), (_, _) => _kbView.ClearSelection(), 200));
+        controls.Controls.Add(Ui.Group(L.T("Brzi odabir (Ctrl = dodaj)"), quick));
 
         // --- raspored uređaja: položaj, oblik i smjer (o tome ovisi kako efekti prelaze s uređaja na uređaj)
         var lay = Ui.Flow(FlowDirection.TopDown);
-        _arrangeChk = new CheckBox { Text = "Pomiči uređaje mišem po slici", AutoSize = true };
+        _arrangeChk = new CheckBox { Text = L.T("Pomiči uređaje mišem po slici"), AutoSize = true };
         _arrangeChk.CheckedChanged += (_, _) =>
         {
             _kbView.ArrangeMode = _arrangeChk.Checked;
@@ -559,36 +550,35 @@ public sealed class MainForm : Form
         lay.Controls.Add(_devCombo);
         var shapeRow = Ui.Flow();
         _devShape = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110, Margin = new Padding(3, 3, 6, 3) };
-        _devShape.Items.AddRange(new object[] { "Traka", "Krug" });
+        _devShape.Items.AddRange(new object[] { L.T("Traka"), L.T("Krug") });
         _devShape.SelectedIndexChanged += (_, _) => SaveDevicePlacement(shapeChanged: true);
-        _devVertical = new CheckBox { Text = "Okomito", AutoSize = true, Margin = new Padding(3, 6, 6, 3) };
+        _devVertical = new CheckBox { Text = L.T("Okomito"), AutoSize = true, Margin = new Padding(3, 6, 6, 3) };
         _devVertical.CheckedChanged += (_, _) => SaveDevicePlacement();
         shapeRow.Controls.Add(_devShape);
         shapeRow.Controls.Add(_devVertical);
         lay.Controls.Add(shapeRow);
-        _devLinear = new CheckBox { Text = "Krug svijetli linearno (redom LED-ica)", AutoSize = true };
+        _devLinear = new CheckBox { Text = L.T("Krug svijetli linearno (redom LED-ica)"), AutoSize = true };
         _devLinear.CheckedChanged += (_, _) => SaveDevicePlacement();
         lay.Controls.Add(_devLinear);
-        _devReverse = new CheckBox { Text = "Obrnuti smjer LED-ica", AutoSize = true };
+        _devReverse = new CheckBox { Text = L.T("Obrnuti smjer LED-ica"), AutoSize = true };
         _devReverse.CheckedChanged += (_, _) => SaveDevicePlacement();
         lay.Controls.Add(_devReverse);
-        _devMirror = new CheckBox { Text = "Zrcalno (druga polovica ponavlja prvu)", AutoSize = true };
+        _devMirror = new CheckBox { Text = L.T("Zrcalno (druga polovica ponavlja prvu)"), AutoSize = true };
         _devMirror.CheckedChanged += (_, _) => SaveDevicePlacement();
         lay.Controls.Add(_devMirror);
         var sizeRow = Ui.Flow();
-        sizeRow.Controls.Add(new Label { Text = "Veličina (0 = zadano):", AutoSize = true, Margin = new Padding(3, 6, 6, 3) });
+        sizeRow.Controls.Add(new Label { Text = L.T("Veličina (0 = zadano):"), AutoSize = true, Margin = new Padding(3, 6, 6, 3) });
         _devSize = new NumericUpDown { Minimum = 0, Maximum = 40, DecimalPlaces = 1, Increment = 0.5m, Width = 70 };
         _devSize.ValueChanged += (_, _) => SaveDevicePlacement();
         sizeRow.Controls.Add(_devSize);
         lay.Controls.Add(sizeRow);
-        lay.Controls.Add(Ui.Btn("Vrati zadani raspored", (_, _) => _c.ResetPlacements(), 200));
+        lay.Controls.Add(Ui.Btn(L.T("Vrati zadani raspored"), (_, _) => _c.ResetPlacements(), 200));
         lay.Controls.Add(new Label
         {
             AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = SystemColors.GrayText,
-            Text = "Postavi uređaje na slici kao što stoje u kućištu (ventilatori kao krug). Efekti poput vala i skenera " +
-                   "tada glatko prelaze preko svih uređaja lijevo-desno ili gore-dolje."
+            Text = L.T("Postavi uređaje na slici kao što stoje u kućištu (ventilatori kao krug). Efekti poput vala i skenera tada glatko prelaze preko svih uređaja lijevo-desno ili gore-dolje.")
         });
-        controls.Controls.Add(Ui.Group("Raspored uređaja", lay));
+        controls.Controls.Add(Ui.Group(L.T("Raspored uređaja"), lay));
 
         split.Controls.Add(controls, 0, 1);
         page.Controls.Add(split);
@@ -610,7 +600,7 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var banks = Ui.Flow();
-        banks.Controls.Add(Ui.Lbl("Banka:", true));
+        banks.Controls.Add(Ui.Lbl(L.T("Banka:"), true));
         for (int i = 0; i < 3; i++)
         {
             int bank = i + 1;
@@ -624,14 +614,15 @@ public sealed class MainForm : Form
             banks.Controls.Add(_bankRb[i]);
         }
         left.Controls.Add(banks, 0, 0);
-        left.Controls.Add(Ui.Lbl("Tipke (banka se na tipkovnici bira s M1/M2/M3):"), 0, 1);
-        _gList = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false, Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 10.5f) };
+        left.Controls.Add(Ui.Lbl(L.T("Tipke (banka se na tipkovnici bira s M1/M2/M3):")), 0, 1);
+        _gList = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false, Font = Theme.UiFont(10.5f), DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 46 };
+        _gList.DrawItem += DrawGItem;
         _gList.SelectedIndexChanged += (_, _) => LoadMacro();
         left.Controls.Add(_gList, 0, 2);
         left.Controls.Add(new Label
         {
             AutoSize = false, Dock = DockStyle.Fill, Height = 90, ForeColor = SystemColors.GrayText,
-            Text = "Snimanje s tipkovnice: pritisni MR, utipkaj slijed, pa pritisni G tipku na koju ga želiš spremiti. Ponovni MR odustaje."
+            Text = L.T("Snimanje s tipkovnice: pritisni MR, utipkaj slijed, pa pritisni G tipku na koju ga želiš spremiti. Ponovni MR odustaje.")
         }, 0, 3);
         table.Controls.Add(left, 0, 0);
 
@@ -645,7 +636,7 @@ public sealed class MainForm : Form
         mid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         mid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        mid.Controls.Add(Ui.Lbl("Naziv:"), 0, 0);
+        mid.Controls.Add(Ui.Lbl(L.T("Naziv:")), 0, 0);
         _macroName = new TextBox { Dock = DockStyle.Fill };
         _macroName.TextChanged += (_, _) =>
         {
@@ -656,9 +647,9 @@ public sealed class MainForm : Form
         };
         mid.Controls.Add(_macroName, 1, 0);
 
-        mid.Controls.Add(Ui.Lbl("Način:"), 0, 1);
+        mid.Controls.Add(Ui.Lbl(L.T("Način:")), 0, 1);
         _modeCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
-        _modeCombo.Items.AddRange(new object[] { "Jednom po pritisku", "Ponavljaj dok je tipka držana", "Uključi / isključi ponavljanje" });
+        _modeCombo.Items.AddRange(new object[] { L.T("Jednom po pritisku"), L.T("Ponavljaj dok je tipka držana"), L.T("Uključi / isključi ponavljanje") });
         _modeCombo.SelectedIndexChanged += (_, _) =>
         {
             if (_loading || CurrentG == 0 || _modeCombo.SelectedIndex < 0) return;
@@ -667,7 +658,8 @@ public sealed class MainForm : Form
         };
         mid.Controls.Add(_modeCombo, 1, 1);
 
-        _steps = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false, Font = new Font("Consolas", 10f), SelectionMode = SelectionMode.MultiExtended };
+        _steps = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false, Font = Theme.Mono(9.5f), SelectionMode = SelectionMode.MultiExtended, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 32 };
+        _steps.DrawItem += DrawStepItem;
         _steps.DoubleClick += (_, _) => EditStep();
         mid.Controls.Add(_steps, 0, 2);
         mid.SetColumnSpan(_steps, 2);
@@ -675,32 +667,32 @@ public sealed class MainForm : Form
         _recInfo = new Label { AutoSize = true, ForeColor = Color.Firebrick, Margin = new Padding(3, 6, 3, 3) };
         mid.Controls.Add(_recInfo, 0, 3);
         mid.SetColumnSpan(_recInfo, 2);
-        _recSink = new TextBox { ReadOnly = true, Dock = DockStyle.Fill, Text = "(ovdje je fokus tijekom snimanja)", TabStop = false };
+        _recSink = new TextBox { ReadOnly = true, Dock = DockStyle.Fill, Text = L.T("(ovdje je fokus tijekom snimanja)"), TabStop = false };
         mid.Controls.Add(_recSink, 0, 4);
         mid.SetColumnSpan(_recSink, 2);
         table.Controls.Add(mid, 1, 0);
 
         // desno: akcije
         var right = Ui.Flow(FlowDirection.TopDown);
-        _recBtn = Ui.Btn("● Snimi", (_, _) => ToggleUiRecording(), 210);
+        _recBtn = Ui.Btn(L.T("● Snimi"), (_, _) => ToggleUiRecording(), 210);
         right.Controls.Add(_recBtn);
-        _recDelays = new CheckBox { Text = "Snimaj kašnjenja", AutoSize = true, Margin = new Padding(6, 2, 3, 10) };
+        _recDelays = new CheckBox { Text = L.T("Snimaj kašnjenja"), AutoSize = true, Margin = new Padding(6, 2, 3, 10) };
         _recDelays.CheckedChanged += (_, _) => { if (_loading) return; _c.Settings.RecordDelays = _recDelays.Checked; _c.SaveSoon(); };
         right.Controls.Add(_recDelays);
-        right.Controls.Add(Ui.Btn("+ Tipka / kombinacija…", (_, _) => AddKeyStep(), 210));
-        right.Controls.Add(Ui.Btn("+ Kašnjenje…", (_, _) => AddDelayStep(), 210));
-        right.Controls.Add(Ui.Btn("+ Upiši tekst…", (_, _) => AddTextStep(), 210));
-        right.Controls.Add(Ui.Btn("+ Pokreni program…", (_, _) => AddRunStep(), 210));
-        right.Controls.Add(Ui.Btn("+ HTTP poziv (URL)…", (_, _) => AddHttpStep(), 210));
-        right.Controls.Add(Ui.Btn("+ Unos vrijednosti…", (_, _) => AddInputStep(), 210));
+        right.Controls.Add(Ui.Btn(L.T("+ Tipka / kombinacija…"), (_, _) => AddKeyStep(), 210));
+        right.Controls.Add(Ui.Btn(L.T("+ Kašnjenje…"), (_, _) => AddDelayStep(), 210));
+        right.Controls.Add(Ui.Btn(L.T("+ Upiši tekst…"), (_, _) => AddTextStep(), 210));
+        right.Controls.Add(Ui.Btn(L.T("+ Pokreni program…"), (_, _) => AddRunStep(), 210));
+        right.Controls.Add(Ui.Btn(L.T("+ HTTP poziv (URL)…"), (_, _) => AddHttpStep(), 210));
+        right.Controls.Add(Ui.Btn(L.T("+ Unos vrijednosti…"), (_, _) => AddInputStep(), 210));
         right.Controls.Add(new Label { Height = 10 });
-        right.Controls.Add(Ui.Btn("Uredi korak", (_, _) => EditStep(), 210));
-        right.Controls.Add(Ui.Btn("Gore", (_, _) => MoveStep(-1), 210));
-        right.Controls.Add(Ui.Btn("Dolje", (_, _) => MoveStep(1), 210));
-        right.Controls.Add(Ui.Btn("Ukloni odabrane korake", (_, _) => RemoveSteps(), 210));
-        right.Controls.Add(Ui.Btn("Očisti makro", (_, _) => ClearMacro(), 210));
+        right.Controls.Add(Ui.Btn(L.T("Uredi korak"), (_, _) => EditStep(), 210));
+        right.Controls.Add(Ui.Btn(L.T("Gore"), (_, _) => MoveStep(-1), 210));
+        right.Controls.Add(Ui.Btn(L.T("Dolje"), (_, _) => MoveStep(1), 210));
+        right.Controls.Add(Ui.Btn(L.T("Ukloni odabrane korake"), (_, _) => RemoveSteps(), 210));
+        right.Controls.Add(Ui.Btn(L.T("Očisti makro"), (_, _) => ClearMacro(), 210));
         right.Controls.Add(new Label { Height = 10 });
-        right.Controls.Add(Primary(Ui.Btn("▶ Testiraj (za 3 s)", async (_, _) => await TestMacro(), 210)));
+        right.Controls.Add(Primary(Ui.Btn(L.T("▶ Testiraj (za 3 s)"), async (_, _) => await TestMacro(), 210)));
         table.Controls.Add(right, 2, 0);
 
         page.Controls.Add(table);
@@ -718,16 +710,16 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        left.Controls.Add(Ui.Lbl("Profili:", true), 0, 0);
+        left.Controls.Add(Ui.Lbl(L.T("Profili:"), true), 0, 0);
         _profList = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false };
         _profList.SelectedIndexChanged += (_, _) => RefreshApps();
         left.Controls.Add(_profList, 0, 1);
         var pb = Ui.Flow();
-        pb.Controls.Add(Ui.Btn("Novi", (_, _) => NewProfile(false)));
-        pb.Controls.Add(Ui.Btn("Dupliciraj", (_, _) => NewProfile(true)));
-        pb.Controls.Add(Ui.Btn("Preimenuj", (_, _) => RenameProfile()));
-        pb.Controls.Add(Ui.Btn("Obriši", (_, _) => DeleteProfile()));
-        pb.Controls.Add(Ui.Btn("Koristi i uređuj ovaj", (_, _) =>
+        pb.Controls.Add(Ui.Btn(L.T("Novi"), (_, _) => NewProfile(false)));
+        pb.Controls.Add(Ui.Btn(L.T("Dupliciraj"), (_, _) => NewProfile(true)));
+        pb.Controls.Add(Ui.Btn(L.T("Preimenuj"), (_, _) => RenameProfile()));
+        pb.Controls.Add(Ui.Btn(L.T("Obriši"), (_, _) => DeleteProfile()));
+        pb.Controls.Add(Ui.Btn(L.T("Koristi i uređuj ovaj"), (_, _) =>
         {
             if (SelectedProfile is { } sp) { _c.SetActiveProfile(sp.Name); ReloadAll(); }
         }));
@@ -740,18 +732,18 @@ public sealed class MainForm : Form
         right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        _autoSwitch = new CheckBox { Text = "Automatski mijenjaj profil prema aktivnoj aplikaciji", AutoSize = true };
+        _autoSwitch = new CheckBox { Text = L.T("Automatski mijenjaj profil prema aktivnoj aplikaciji"), AutoSize = true };
         _autoSwitch.CheckedChanged += (_, _) => { if (_loading) return; _c.Settings.AutoSwitch = _autoSwitch.Checked; _c.SaveSoon(); };
         right.Controls.Add(_autoSwitch, 0, 0);
         _effLabel = new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 10) };
         right.Controls.Add(_effLabel, 0, 1);
-        right.Controls.Add(Ui.Lbl("Aplikacije koje uključuju odabrani profil:", true), 0, 2);
+        right.Controls.Add(Ui.Lbl(L.T("Aplikacije koje uključuju odabrani profil:"), true), 0, 2);
         _appList = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false };
         right.Controls.Add(_appList, 0, 3);
         var ab = Ui.Flow();
-        ab.Controls.Add(Ui.Btn("Dodaj iz pokrenutih…", (_, _) => AddAppFromRunning()));
-        ab.Controls.Add(Ui.Btn("Dodaj .exe…", (_, _) => AddAppFromFile()));
-        ab.Controls.Add(Ui.Btn("Ukloni", (_, _) => RemoveApp()));
+        ab.Controls.Add(Ui.Btn(L.T("Dodaj iz pokrenutih…"), (_, _) => AddAppFromRunning()));
+        ab.Controls.Add(Ui.Btn(L.T("Dodaj .exe…"), (_, _) => AddAppFromFile()));
+        ab.Controls.Add(Ui.Btn(L.T("Ukloni"), (_, _) => RemoveApp()));
         right.Controls.Add(ab, 0, 4);
         table.Controls.Add(right, 1, 0);
 
@@ -765,7 +757,7 @@ public sealed class MainForm : Form
         var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
 
         var general = Ui.Flow(FlowDirection.TopDown);
-        _autostart = new CheckBox { Text = "Pokreni s Windowsima (u trayu)", AutoSize = true };
+        _autostart = new CheckBox { Text = L.T("Pokreni s Windowsima (u trayu)"), AutoSize = true };
         _autostart.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
@@ -773,7 +765,7 @@ public sealed class MainForm : Form
             catch (Exception ex) { MessageBox.Show(this, ex.Message, "Autostart", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         };
         general.Controls.Add(_autostart);
-        _lightsOffOnExit = new CheckBox { Text = "Pri izlazu ugasi sve LED-ice (tipkovnica, miš, računalo)", AutoSize = true };
+        _lightsOffOnExit = new CheckBox { Text = L.T("Pri izlazu ugasi sve LED-ice (tipkovnica, miš, računalo)"), AutoSize = true };
         _lightsOffOnExit.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
@@ -781,7 +773,7 @@ public sealed class MainForm : Form
             _c.SaveSoon();
         };
         general.Controls.Add(_lightsOffOnExit);
-        _lightsOffWithDisplays = new CheckBox { Text = "Ugasi rasvjetu kad se monitori ugase (štednja energije) i upali je kad se upale", AutoSize = true };
+        _lightsOffWithDisplays = new CheckBox { Text = L.T("Ugasi rasvjetu kad se monitori ugase (štednja energije) i upali je kad se upale"), AutoSize = true };
         _lightsOffWithDisplays.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
@@ -790,10 +782,29 @@ public sealed class MainForm : Form
         };
         general.Controls.Add(_lightsOffWithDisplays);
 
+        var langRow = Ui.Flow();
+        langRow.Controls.Add(Ui.Lbl(L.T("Jezik / Language:")));
+        _langCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
+        _langCombo.Items.Add(L.T("Prema Windowsima") + $" ({L.Languages.First(x => x.Code == L.SystemLanguage).Name})");
+        foreach (var (_, name) in L.Languages) _langCombo.Items.Add(name);
+        _langCombo.SelectedIndexChanged += (_, _) =>
+        {
+            if (_loading || _langCombo.SelectedIndex < 0) return;
+            string code = _langCombo.SelectedIndex == 0 ? "" : L.Languages[_langCombo.SelectedIndex - 1].Code;
+            if (code == _c.Settings.Language) return;
+            _c.Settings.Language = code;
+            _c.SaveSoon();
+            L.Init(code);
+            // prozor se ponovno složi na novom jeziku
+            BeginInvoke(() => TrayContext.Current?.ReopenForm());
+        };
+        langRow.Controls.Add(_langCombo);
+        general.Controls.Add(langRow);
+
         var row = Ui.Flow();
-        row.Controls.Add(Ui.Lbl("Raspored tipkovnice:"));
+        row.Controls.Add(Ui.Lbl(L.T("Raspored tipkovnice:")));
         _layoutCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
-        _layoutCombo.Items.AddRange(new object[] { "ISO (hrvatski / EU)", "ANSI (US)" });
+        _layoutCombo.Items.AddRange(new object[] { L.T("ISO (hrvatski / EU)"), L.T("ANSI (US)") });
         _layoutCombo.SelectedIndexChanged += (_, _) =>
         {
             if (_loading) return;
@@ -803,7 +814,7 @@ public sealed class MainForm : Form
             ReloadKeys();
         };
         row.Controls.Add(_layoutCombo);
-        row.Controls.Add(Ui.Lbl("   Osvježavanje (FPS):"));
+        row.Controls.Add(Ui.Lbl(L.T("   Osvježavanje (FPS):")));
         _fps = new NumericUpDown { Minimum = 5, Maximum = 60, Width = 60 };
         _fps.ValueChanged += (_, _) =>
         {
@@ -814,14 +825,14 @@ public sealed class MainForm : Form
         };
         row.Controls.Add(_fps);
         general.Controls.Add(row);
-        flow.Controls.Add(Ui.Group("Općenito", general));
+        flow.Controls.Add(Ui.Group(L.T("Općenito"), general));
 
         var dev = Ui.Flow(FlowDirection.TopDown);
         _devInfo = new Label { AutoSize = true, MaximumSize = new Size(900, 0) };
         dev.Controls.Add(_devInfo);
         var devBtns = Ui.Flow();
-        devBtns.Controls.Add(Ui.Btn("Ponovno spoji", (_, _) => _c.Reconnect()));
-        devBtns.Controls.Add(Ui.Btn("Otvori mapu s postavkama i logom", (_, _) =>
+        devBtns.Controls.Add(Ui.Btn(L.T("Ponovno spoji"), (_, _) => _c.Reconnect()));
+        devBtns.Controls.Add(Ui.Btn(L.T("Otvori mapu s postavkama i logom"), (_, _) =>
         {
             Directory.CreateDirectory(SettingsStore.Folder);
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{SettingsStore.Folder}\"") { UseShellExecute = true });
@@ -830,30 +841,28 @@ public sealed class MainForm : Form
         dev.Controls.Add(new Label
         {
             AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
-            Text = "Logitech G HUB mora biti potpuno zatvoren (i iz traya) jer inače preuzima tipkovnicu. " +
-                   "Kad se G815 Studio zatvori, tipkovnica se vraća na svoje ugrađene postavke."
+            Text = L.T("Logitech G HUB mora biti potpuno zatvoren (i iz traya) jer inače preuzima tipkovnicu. Kad se SVITAC zatvori, tipkovnica se vraća na svoje ugrađene postavke.")
         });
-        flow.Controls.Add(Ui.Group("Uređaj", dev));
+        flow.Controls.Add(Ui.Group(L.T("Uređaj"), dev));
 
         var zones = Ui.Flow(FlowDirection.TopDown);
         zones.Controls.Add(new Label
         {
             AutoSize = true, MaximumSize = new Size(900, 0),
-            Text = "Ako neka tipka ne svijetli ili svijetli kriva: uključi ispitivač, mijenjaj broj zone dok ne zasvijetli " +
-                   "željena tipka (samo ona će svijetliti bijelo), odaberi tu tipku na popisu i klikni \"Pridruži\"."
+            Text = L.T("Ako neka tipka ne svijetli ili svijetli kriva: uključi ispitivač, mijenjaj broj zone dok ne zasvijetli željena tipka (samo ona će svijetliti bijelo), odaberi tu tipku na popisu i klikni \"Pridruži\".")
         });
         var zr = Ui.Flow();
-        _zoneTest = new CheckBox { Text = "Ispitivač zona uključen", AutoSize = true, Margin = new Padding(3, 7, 10, 3) };
+        _zoneTest = new CheckBox { Text = L.T("Ispitivač zona uključen"), AutoSize = true, Margin = new Padding(3, 7, 10, 3) };
         _zoneTest.CheckedChanged += (_, _) => _c.Engine.TestZone = _zoneTest.Checked ? (int)_zoneNum.Value : -1;
         zr.Controls.Add(_zoneTest);
-        zr.Controls.Add(Ui.Lbl("Zona:"));
+        zr.Controls.Add(Ui.Lbl(L.T("Zona:")));
         _zoneNum = new NumericUpDown { Minimum = 0, Maximum = 255, Hexadecimal = true, Width = 70 };
         _zoneNum.ValueChanged += (_, _) => { if (_zoneTest.Checked) _c.Engine.TestZone = (int)_zoneNum.Value; };
         zr.Controls.Add(_zoneNum);
         zr.Controls.Add(Ui.Lbl("  Tipka:"));
         _zoneKey = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
         zr.Controls.Add(_zoneKey);
-        zr.Controls.Add(Ui.Btn("Pridruži", (_, _) =>
+        zr.Controls.Add(Ui.Btn(L.T("Pridruži"), (_, _) =>
         {
             if (_zoneKey.SelectedItem is not KeyDef k) return;
             _c.Settings.ZoneOverrides[k.Id] = (int)_zoneNum.Value;
@@ -861,7 +870,7 @@ public sealed class MainForm : Form
             _c.SaveSoon();
             ReloadKeys();
         }));
-        zr.Controls.Add(Ui.Btn("Vrati sve zone na zadano", (_, _) =>
+        zr.Controls.Add(Ui.Btn(L.T("Vrati sve zone na zadano"), (_, _) =>
         {
             _c.Settings.ZoneOverrides.Clear();
             _c.RebuildKeys();
@@ -872,9 +881,9 @@ public sealed class MainForm : Form
 
         // pomoćnik: prolaz kroz zone koje još nisu pridružene nijednoj tipki
         var zr2 = Ui.Flow();
-        zr2.Controls.Add(Ui.Btn("◀ Prethodna slobodna", (_, _) => StepZone(-1)));
-        zr2.Controls.Add(Ui.Btn("Sljedeća slobodna ▶", (_, _) => StepZone(1)));
-        _zoneAuto = new CheckBox { Text = "Automatski prolaz (1 s po zoni)", AutoSize = true, Margin = new Padding(12, 9, 10, 3) };
+        zr2.Controls.Add(Ui.Btn(L.T("◀ Prethodna slobodna"), (_, _) => StepZone(-1)));
+        zr2.Controls.Add(Ui.Btn(L.T("Sljedeća slobodna ▶"), (_, _) => StepZone(1)));
+        _zoneAuto = new CheckBox { Text = L.T("Automatski prolaz (1 s po zoni)"), AutoSize = true, Margin = new Padding(12, 9, 10, 3) };
         _zoneAuto.CheckedChanged += (_, _) =>
         {
             if (_zoneAuto.Checked) { _zoneTest.Checked = true; _zoneTimer.Start(); }
@@ -885,15 +894,14 @@ public sealed class MainForm : Form
         zones.Controls.Add(new Label
         {
             AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
-            Text = "Za medijske tipke, tipku za svjetlinu i tipku za igre: odaberi tipku na popisu, uključi automatski prolaz " +
-                   "i kad ta tipka zasvijetli bijelo, isključi prolaz (po potrebi vrati se korak gumbom ◀) pa klikni \"Pridruži\"."
+            Text = L.T("Za medijske tipke, tipku za svjetlinu i tipku za igre: odaberi tipku na popisu, uključi automatski prolaz i kad ta tipka zasvijetli bijelo, isključi prolaz (po potrebi vrati se korak gumbom ◀) pa klikni \"Pridruži\".")
         });
         _zoneTimer.Tick += (_, _) => StepZone(1);
-        flow.Controls.Add(Ui.Group("Ispitivač i ispravak zona", zones));
+        flow.Controls.Add(Ui.Group(L.T("Ispitivač i ispravak zona"), zones));
 
         // ---- miš
         var mouse = Ui.Flow(FlowDirection.TopDown);
-        _mouseEnable = new CheckBox { Text = "Upravljaj osvjetljenjem Logitech miša (LIGHTSPEED ili kabel)", AutoSize = true };
+        _mouseEnable = new CheckBox { Text = L.T("Upravljaj osvjetljenjem Logitech miša (LIGHTSPEED ili kabel)"), AutoSize = true };
         _mouseEnable.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
@@ -902,15 +910,15 @@ public sealed class MainForm : Form
         };
         mouse.Controls.Add(_mouseEnable);
         var mr = Ui.Flow();
-        _mouseFollow = new RadioButton { Text = "Prati efekt tipkovnice", AutoSize = true, Margin = new Padding(3, 9, 16, 3) };
-        _mouseSolid = new RadioButton { Text = "Jedna boja:", AutoSize = true, Margin = new Padding(3, 9, 6, 3) };
+        _mouseFollow = new RadioButton { Text = L.T("Prati efekt tipkovnice"), AutoSize = true, Margin = new Padding(3, 9, 16, 3) };
+        _mouseSolid = new RadioButton { Text = L.T("Jedna boja:"), AutoSize = true, Margin = new Padding(3, 9, 6, 3) };
         _mouseFollow.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
             _c.Settings.MouseFollow = _mouseFollow.Checked;
             _c.MouseSettingsChanged();
         };
-        _mouseColorBtn = Ui.Btn("Boja miša", (_, _) =>
+        _mouseColorBtn = Ui.Btn(L.T("Boja miša"), (_, _) =>
         {
             var col = Ui.PickColor(this, ColorUtil.Parse(_c.Settings.MouseColor));
             if (!col.HasValue) return;
@@ -926,7 +934,7 @@ public sealed class MainForm : Form
         mouse.Controls.Add(mr);
         _mouseHost = new CheckBox
         {
-            Text = "Potpuna kontrola (host način) – uključi ako miš ne mijenja boju. Dok program radi, DPI i tipke miša rade po tvorničkim postavkama.",
+            Text = L.T("Potpuna kontrola (host način) – uključi ako miš ne mijenja boju. Dok program radi, DPI i tipke miša rade po tvorničkim postavkama."),
             AutoSize = true, MaximumSize = new Size(900, 0), Margin = new Padding(3, 8, 3, 3)
         };
         _mouseHost.CheckedChanged += (_, _) =>
@@ -941,14 +949,13 @@ public sealed class MainForm : Form
         mouse.Controls.Add(new Label
         {
             AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
-            Text = "Kad miš prati efekt, nalazi se „desno od numeričke tipkovnice“, pa val, vatra ili spektar prelaze i na njega. " +
-                   "DPI i tipke miša ostaju kako su namješteni u samom mišu. G HUB mora biti zatvoren."
+            Text = L.T("Kad miš prati efekt, nalazi se „desno od numeričke tipkovnice“, pa val, vatra ili spektar prelaze i na njega. DPI i tipke miša ostaju kako su namješteni u samom mišu. G HUB mora biti zatvoren.")
         });
-        flow.Controls.Add(Ui.Group("Miš", mouse));
+        flow.Controls.Add(Ui.Group(L.T("Miš"), mouse));
 
         // ---- računalo (ASRock RGB na matičnoj ploči)
         var pc = Ui.Flow(FlowDirection.TopDown);
-        _pcEnable = new CheckBox { Text = "Upravljaj RGB osvjetljenjem računala (ASRock Polychrome, ARGB i RGB headeri na ploči)", AutoSize = true };
+        _pcEnable = new CheckBox { Text = L.T("Upravljaj RGB osvjetljenjem računala (ASRock Polychrome, ARGB i RGB headeri na ploči)"), AutoSize = true };
         _pcEnable.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
@@ -957,15 +964,15 @@ public sealed class MainForm : Form
         };
         pc.Controls.Add(_pcEnable);
         var pr = Ui.Flow();
-        _pcFollow = new RadioButton { Text = "Prati efekt tipkovnice", AutoSize = true, Margin = new Padding(3, 9, 16, 3) };
-        _pcSolid = new RadioButton { Text = "Jedna boja:", AutoSize = true, Margin = new Padding(3, 9, 6, 3) };
+        _pcFollow = new RadioButton { Text = L.T("Prati efekt tipkovnice"), AutoSize = true, Margin = new Padding(3, 9, 16, 3) };
+        _pcSolid = new RadioButton { Text = L.T("Jedna boja:"), AutoSize = true, Margin = new Padding(3, 9, 6, 3) };
         _pcFollow.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
             _c.Settings.PcFollow = _pcFollow.Checked;
             _c.PcSettingsChanged();
         };
-        _pcColorBtn = Ui.Btn("Boja računala", (_, _) =>
+        _pcColorBtn = Ui.Btn(L.T("Boja računala"), (_, _) =>
         {
             var col = Ui.PickColor(this, ColorUtil.Parse(_c.Settings.PcColor));
             if (!col.HasValue) return;
@@ -979,7 +986,7 @@ public sealed class MainForm : Form
         pr.Controls.Add(_pcSolid);
         pr.Controls.Add(_pcColorBtn);
         pc.Controls.Add(pr);
-        _pcSwap = new CheckBox { Text = "Zamijeni crvenu i zelenu (ako ventilatori pokazuju zeleno umjesto crvenog)", AutoSize = true, Margin = new Padding(3, 8, 3, 3) };
+        _pcSwap = new CheckBox { Text = L.T("Zamijeni crvenu i zelenu (ako ventilatori pokazuju zeleno umjesto crvenog)"), AutoSize = true, Margin = new Padding(3, 8, 3, 3) };
         _pcSwap.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
@@ -988,7 +995,7 @@ public sealed class MainForm : Form
         };
         pc.Controls.Add(_pcSwap);
         var lr = Ui.Flow();
-        lr.Controls.Add(new Label { Text = "Broj LED-ica na izlazu:", AutoSize = true, Margin = new Padding(3, 9, 6, 3) });
+        lr.Controls.Add(new Label { Text = L.T("Broj LED-ica na izlazu:"), AutoSize = true, Margin = new Padding(3, 9, 6, 3) });
         _pcChannel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220, Margin = new Padding(3, 5, 6, 3) };
         _pcLeds = new NumericUpDown { Minimum = 0, Maximum = 100, Width = 70, Margin = new Padding(3, 5, 6, 3) };
         _pcChannel.SelectedIndexChanged += (_, _) =>
@@ -999,7 +1006,7 @@ public sealed class MainForm : Form
         };
         lr.Controls.Add(_pcChannel);
         lr.Controls.Add(_pcLeds);
-        _pcWrite = Ui.Btn("Upiši u kontroler", (_, _) =>
+        _pcWrite = Ui.Btn(L.T("Upiši u kontroler"), (_, _) =>
         {
             if (_pcChannel.SelectedItem is not AsrockChannel ch || !ch.Addressable) return;
             _c.SetPcLedCount(ch.ZoneType, (int)_pcLeds.Value);
@@ -1011,14 +1018,11 @@ public sealed class MainForm : Form
         pc.Controls.Add(new Label
         {
             AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
-            Text = "Svaki izlaz kontrolera crta se sa svim svojim LED-icama, pa efekti glatko prelaze i na ventilatore i LED trake. " +
-                   "Položaj, oblik (traka ili krug) i smjer namještaju se na kartici Osvjetljenje → Raspored uređaja. " +
-                   "Broj LED-ica mijenja se samo za ARGB izlaze: upisuje se u kontroler na ploči i vrijedi i za ASRockov program. " +
-                   "Pri izlazu iz programa ploča se vraća na svoje prijašnje osvjetljenje. ASRock Polychrome Sync mora biti zatvoren."
+            Text = L.T("Svaki izlaz kontrolera crta se sa svim svojim LED-icama, pa efekti glatko prelaze i na ventilatore i LED trake. Položaj, oblik (traka ili krug) i smjer namještaju se na kartici Osvjetljenje → Raspored uređaja. Broj LED-ica mijenja se samo za ARGB izlaze: upisuje se u kontroler na ploči i vrijedi i za ASRockov program. Pri izlazu iz programa ploča se vraća na svoje prijašnje osvjetljenje. ASRock Polychrome Sync mora biti zatvoren.")
         });
         // ---- memorija (Kingston Fury) – zasad samo dijagnostika, bez upisa
         var ram = Ui.Flow(FlowDirection.TopDown);
-        _ramEnable = new CheckBox { Text = "Upravljaj osvjetljenjem memorije (Kingston Fury) – prati efekte", AutoSize = true };
+        _ramEnable = new CheckBox { Text = L.T("Upravljaj osvjetljenjem memorije (Kingston Fury) – prati efekte"), AutoSize = true };
         _ramEnable.CheckedChanged += (_, _) =>
         {
             if (_loading) return;
@@ -1028,20 +1032,20 @@ public sealed class MainForm : Form
         ram.Controls.Add(_ramEnable);
         _ramStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3) };
         ram.Controls.Add(_ramStatus);
-        var ramStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3), Text = "Nije ispitano." };
+        var ramStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3), Text = L.T("Nije ispitano.") };
         Button ramBtn = null;
-        ramBtn = Ui.Btn("Ispitaj RAM (samo čitanje)", async (_, _) =>
+        ramBtn = Ui.Btn(L.T("Ispitaj RAM (samo čitanje)"), async (_, _) =>
         {
             ramBtn.Enabled = false;
-            ramStatus.Text = "Ispitujem SMBus…";
-            try { ramStatus.Text = await Task.Run(RamProbe.Run) + "  Detalji su u log.txt."; }
-            catch (Exception ex) { ramStatus.Text = "Greška: " + ex.Message; }
+            ramStatus.Text = L.T("Ispitujem SMBus…");
+            try { ramStatus.Text = await Task.Run(RamProbe.Run) + L.T("  Detalji su u log.txt."); }
+            catch (Exception ex) { ramStatus.Text = L.T("Greška: ") + ex.Message; }
             finally { ramBtn.Enabled = true; }
         }, 220);
         ram.Controls.Add(ramBtn);
         if (!PawnIoHost.IsElevated)
         {
-            ram.Controls.Add(Ui.Btn("Ponovno pokreni kao administrator", (_, _) =>
+            ram.Controls.Add(Ui.Btn(L.T("Ponovno pokreni kao administrator"), (_, _) =>
             {
                 if (PawnIoHost.RestartElevated()) { if (TrayContext.Current != null) TrayContext.Current.RequestExit(); else Application.Exit(); }
             }, 260));
@@ -1050,13 +1054,10 @@ public sealed class MainForm : Form
         ram.Controls.Add(new Label
         {
             AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
-            Text = "Memorija se ne vidi kao USB uređaj, nego preko SMBus-a na ploči, za što treba drajver PawnIO (pawnio.eu). " +
-                   "Program ga nosi u sebi: kad zatreba, privremeno ga instalira, a pri izlazu ga ukloni (ako ga nisi imao od prije). " +
-                   "Program pritom mora raditi kao administrator. Dok G815 Studio upravlja memorijom, SignalRGB, OpenRGB i slični programi ne smiju raditi. " +
-                   "„Ispitaj RAM“ samo čita adrese i zapisuje ih u log."
+            Text = L.T("Memorija se ne vidi kao USB uređaj, nego preko SMBus-a na ploči, za što treba drajver PawnIO (pawnio.eu). Program ga nosi u sebi: kad zatreba, privremeno ga instalira, a pri izlazu ga ukloni (ako ga nisi imao od prije). Program pritom mora raditi kao administrator. Dok SVITAC upravlja memorijom, SignalRGB, OpenRGB i slični programi ne smiju raditi. „Ispitaj RAM“ samo čita adrese i zapisuje ih u log.")
         });
-        flow.Controls.Add(Ui.Group("Računalo (ASRock RGB)", pc));
-        flow.Controls.Add(Ui.Group("Memorija (Kingston Fury)", ram));
+        flow.Controls.Add(Ui.Group(L.T("Računalo (ASRock RGB)"), pc));
+        flow.Controls.Add(Ui.Group(L.T("Memorija (Kingston Fury)"), ram));
 
         page.Controls.Add(flow);
         return page;
@@ -1073,11 +1074,11 @@ public sealed class MainForm : Form
             foreach (var p in _c.Settings.Profiles) _profileCombo.Items.Add(p.Name);
             _profileCombo.SelectedItem = P.Name;
 
-            var L = P.Lighting;
-            int fi = Array.FindIndex(Effects, e => e.Type == L.Effect);
+            var lc = P.Lighting;
+            int fi = Array.FindIndex(Effects, e => e.Type == lc.Effect);
             _effectCombo.SelectedIndex = Math.Max(0, fi);
-            _effectHelp.Text = Effects[_effectCombo.SelectedIndex].Help;
-            _bright.Value = Math.Clamp(L.Brightness, _bright.Minimum, _bright.Maximum);
+            _effectHelp.Text = L.T(Effects[_effectCombo.SelectedIndex].Help);
+            _bright.Value = Math.Clamp(lc.Brightness, _bright.Minimum, _bright.Maximum);
             LoadEffectParams();
 
             _recDelays.Checked = _c.Settings.RecordDelays;
@@ -1103,6 +1104,8 @@ public sealed class MainForm : Form
             _pcSwap.Checked = _c.Settings.PcSwapRG;
             Ui.PaintSwatch(_pcColorBtn, ColorUtil.Parse(_c.Settings.PcColor));
             _layoutCombo.SelectedIndex = _c.IsIso ? 0 : 1;
+            int li = Array.FindIndex(L.Languages, x => x.Code == _c.Settings.Language);
+            _langCombo.SelectedIndex = string.IsNullOrEmpty(_c.Settings.Language) || li < 0 ? 0 : li + 1;
             _fps.Value = Math.Clamp(_c.Settings.Fps, 5, 60);
         }
         finally
@@ -1225,45 +1228,74 @@ public sealed class MainForm : Form
     {
         _c.Engine.CopySnapshot(_snapshot);
         _kbView.Invalidate();
-        if (++_tick % 30 == 0) UpdateStatus();
+        _tick++;
+        // pregledi na pločicama efekata polako teku (samo kad je kartica Osvjetljenje vidljiva)
+        if (_tick % 2 == 0 && _pages.Count > 0 && _pages[0].Page.Visible)
+            foreach (var t in _tiles)
+            {
+                t.Phase += t.Selected ? 0.012f : 0.004f;
+                t.Invalidate();
+            }
+        if (_tick % 15 == 0) UpdateTelemetry();
+        if (_tick % 30 == 0) UpdateStatus();
+    }
+
+    private void UpdateTelemetry()
+    {
+        var kb = _c.Keyboard;
+        var eng = _c.Engine;
+        bool live = kb.IsConnected && eng.MeasuredFps > 0;
+        _tFps.Set(live ? eng.MeasuredFps.ToString("0") : "—", live ? (float)eng.MeasuredFps : 0f);
+        _tFps.SparkMax = Math.Max(30, _c.Settings.Fps * 1.25f);
+        _tPackets.Set(live ? eng.PacketsPerFrame.ToString("0.#") : "—");
+        _tSend.Set(live ? eng.SendMs.ToString("0.0") + " ms" : "—");
+        _tBusy.Set(kb.IsConnected ? kb.BusyRetries + "×" : "—");
+        _tBusy.ValueColor = kb.BusyRetries > 0 ? Theme.Warn : Theme.Text;
     }
 
     private void UpdateStatus()
     {
         var kb = _c.Keyboard;
-        _stDevice.Text = kb.IsConnected ? "● " + kb.DeviceName : "○ Nije spojeno" + (string.IsNullOrEmpty(_c.LastConnectError) ? "" : " – " + _c.LastConnectError);
-        _stProfile.Text = "Aktivni profil: " + _c.EffectiveProfile?.Name;
-        _stBank.Text = "Banka: M" + _c.Bank + (_c.HardwareRecording ? "  ● SNIMANJE (MR)" : "");
+        _stDevice.Text = kb.IsConnected ? "● " + kb.DeviceName : "○ " + L.T("Nije spojeno") + (string.IsNullOrEmpty(_c.LastConnectError) ? "" : " – " + L.T(_c.LastConnectError));
+        _stProfile.Text = L.T("Aktivni profil:") + " " + _c.EffectiveProfile?.Name;
+        _stBank.Text = L.T("Banka:") + " M" + _c.Bank + (_c.HardwareRecording ? "  ● " + L.T("SNIMANJE (MR)") : "");
         var eng = _c.Engine;
         _stInfo.Text = eng.LastError is { } err
-            ? "Osvjetljenje: " + err
+            ? L.T("Osvjetljenje:") + " " + L.T(err)
             : kb.IsConnected && eng.MeasuredFps > 0
-                ? $"Osvjetljenje: {eng.MeasuredFps:0} FPS · {eng.PacketsPerFrame:0} paketa · {eng.SendMs:0.0} ms/okvir · zauzeto: {kb.BusyRetries}×"
+                ? L.F("Osvjetljenje: {0:0} FPS · {1:0} paketa · {2:0.0} ms/okvir · zauzeto: {3}×", eng.MeasuredFps, eng.PacketsPerFrame, eng.SendMs, kb.BusyRetries)
                 : "";
 
         _devInfo.Text = kb.IsConnected
-            ? $"Spojeno: {kb.DeviceName}\nHID++ značajke: {kb.FeatureSummary}\nG tipke preusmjerene: {(kb.HasGKeys ? "da" : "ne")}"
-            : "Nije spojeno. " + (_c.LastConnectError ?? "Tražim tipkovnicu…");
+            ? L.F("Spojeno: {0}\nHID++ značajke: {1}\nG tipke preusmjerene: {2}", kb.DeviceName, kb.FeatureSummary, kb.HasGKeys ? L.T("da") : L.T("ne"))
+            : L.T("Nije spojeno.") + " " + L.T(_c.LastConnectError ?? L.T("Tražim tipkovnicu…"));
 
-        _pill.Invalidate();
         for (int i = 0; i < 3; i++)
         {
             bool on = _c.Bank == i + 1;
-            Theme.StyleFlat(_sideBank[i], on ? Theme.AccentBg : Theme.Sidebar, on ? Theme.Accent : Theme.Border);
-            _sideBank[i].ForeColor = on ? Color.White : Theme.TextSoft;
-            _sideBank[i].Font = Theme.UiFont(9.5f, FontStyle.Bold);
+            if (_sideBank[i].Checked != on) { _sideBank[i].Checked = on; _sideBank[i].Invalidate(); }
         }
         _kbView.Bank = _c.Bank;
         _kbView.Recording = _c.HardwareRecording;
         _stDevice.ForeColor = kb.IsConnected ? Theme.Good : Color.FromArgb(255, 138, 155);
 
-        _mouseStatus.Text = !_c.Settings.MouseEnabled ? "Isključeno." : _c.Mouse.Status;
-        _pcStatus.Text = !_c.Settings.PcEnabled ? "Isključeno." : _c.Pc.Status;
-        _ramStatus.Text = _c.RamStatus;
+        // stanje uređaja u lijevoj traci
+        _chipKb.Set(kb.IsConnected ? DeviceChip.State.Ok : DeviceChip.State.Missing,
+            kb.IsConnected ? L.T("USB · upravlja SVITAC") : L.T("nije spojena"));
+        _chipMouse.Set(!_c.Settings.MouseEnabled ? DeviceChip.State.Off : _c.Mouse.IsConnected ? DeviceChip.State.Ok : DeviceChip.State.Missing,
+            !_c.Settings.MouseEnabled ? L.T("isključeno") : _c.Mouse.IsConnected ? _c.Mouse.Name : L.T("nije pronađen"));
+        _chipPc.Set(!_c.Settings.PcEnabled ? DeviceChip.State.Off : _c.Pc.IsConnected ? DeviceChip.State.Ok : DeviceChip.State.Missing,
+            !_c.Settings.PcEnabled ? L.T("isključeno") : _c.Pc.IsConnected ? L.F("{0} izlaza", _c.Pc.Channels.Count()) : L.T("nije pronađen"));
+        _chipRam.Set(!_c.Settings.RamEnabled ? DeviceChip.State.Off : _c.Ram.IsConnected ? DeviceChip.State.Ok : DeviceChip.State.Missing,
+            !_c.Settings.RamEnabled ? L.T("isključeno") : _c.Ram.IsConnected ? L.F("{0} modula", _c.Ram.StickCount) : L.T("nije spojena"));
+
+        _mouseStatus.Text = !_c.Settings.MouseEnabled ? L.T("Isključeno.") : L.T(_c.Mouse.Status);
+        _pcStatus.Text = !_c.Settings.PcEnabled ? L.T("Isključeno.") : L.T(_c.Pc.Status);
+        _ramStatus.Text = L.T(_c.RamStatus);
         RefreshPcChannels();
 
         string fg = _c.ForegroundApp ?? "?";
-        _effLabel.Text = $"Sada aktivan: {_c.EffectiveProfile?.Name}   (zadnja aplikacija u fokusu: {fg})";
+        _effLabel.Text = L.F("Sada aktivan: {0}   (zadnja aplikacija u fokusu: {1})", _c.EffectiveProfile?.Name, fg);
     }
 
     private void RefreshPcChannels()
@@ -1297,7 +1329,7 @@ public sealed class MainForm : Form
     {
         if (_selInfo == null) return;
         int n = _kbView.Selected.Count;
-        _selInfo.Text = n == 0 ? "Nijedna tipka nije odabrana." : $"Odabrano tipki: {n}";
+        _selInfo.Text = n == 0 ? L.T("Nijedna tipka nije odabrana.") : L.F("Odabrano tipki: {0}", n);
     }
 
     // ================================================================= osvjetljenje
@@ -1321,10 +1353,10 @@ public sealed class MainForm : Form
     /// <summary>Vraća zadane boje (i dugu) odabranom efektu ili svim efektima; brzina i smjer ostaju.</summary>
     private void ResetEffectColors(bool all)
     {
-        var L = P.Lighting;
-        foreach (var e in all ? Enum.GetValues<EffectType>() : new[] { L.Effect })
+        var lc = P.Lighting;
+        foreach (var e in all ? Enum.GetValues<EffectType>() : new[] { lc.Effect })
         {
-            var ep = L.For(e);
+            var ep = lc.For(e);
             var d = EffectParams.DefaultFor(e, null);
             ep.Color1 = d.Color1;
             ep.Color2 = d.Color2;
@@ -1340,14 +1372,14 @@ public sealed class MainForm : Form
     /// <summary>Učitava boje, brzinu i smjer odabranog efekta u kontrole (svaki efekt ima svoje).</summary>
     private void LoadEffectParams()
     {
-        var L = P.Lighting;
-        var ep = L.Current;
-        var slot = Slots.TryGetValue(L.Effect, out var sl) ? sl : ("Boja 1", "Boja 2", "Pozadina", false, true, false, null);
+        var lc = P.Lighting;
+        var ep = lc.Current;
+        var slot = Slots.TryGetValue(lc.Effect, out var sl) ? sl : (L.T("Boja 1"), L.T("Boja 2"), L.T("Pozadina"), false, true, false, null);
         bool was = _loading;
         _loading = true;
         try
         {
-            string name = Effects.FirstOrDefault(e => e.Type == L.Effect).Name ?? L.Effect.ToString();
+            string name = L.T(Effects.FirstOrDefault(e => e.Type == lc.Effect).Name) ?? lc.Effect.ToString();
             _colorsTitle.Text = name;
             _rainbowChk.Visible = slot.RainbowOpt;
             _rainbowChk.Checked = ep.Rainbow;
@@ -1355,7 +1387,7 @@ public sealed class MainForm : Form
             _speed.Enabled = slot.Speed;
             _dirCombo.SelectedIndex = Math.Clamp(ep.Direction, 0, 4);
             _dirCombo.Enabled = slot.Dir;
-            _colorsNote.Text = slot.Note ?? "";
+            _colorsNote.Text = L.T(slot.Note) ?? "";
             _colorsNote.Visible = !string.IsNullOrEmpty(slot.Note);
         }
         finally
@@ -1367,22 +1399,22 @@ public sealed class MainForm : Form
 
     private void UpdateColorButtons()
     {
-        var L = P.Lighting;
-        var ep = L.Current;
-        var slot = Slots.TryGetValue(L.Effect, out var sl) ? sl : ("Boja 1", "Boja 2", "Pozadina", false, true, false, null);
+        var lc = P.Lighting;
+        var ep = lc.Current;
+        var slot = Slots.TryGetValue(lc.Effect, out var sl) ? sl : (L.T("Boja 1"), L.T("Boja 2"), L.T("Pozadina"), false, true, false, null);
         bool custom = !slot.RainbowOpt || !ep.Rainbow;
         void Set(Button b, string label, string hex, bool enabled)
         {
             b.Visible = label != null;
             if (label == null) return;
-            b.Text = label;
+            b.Text = L.T(label);
             b.Enabled = enabled;
             Ui.PaintSwatch(b, enabled ? ColorUtil.Parse(hex) : Theme.ControlBg);
             if (!enabled) b.ForeColor = Theme.Muted;
         }
         Set(_c1Btn, slot.C1, ep.Color1, custom);
         Set(_c2Btn, slot.C2, ep.Color2, custom);
-        bool four = EffectParams.SupportsFourColors(L.Effect) && slot.C2 != null;
+        bool four = EffectParams.SupportsFourColors(lc.Effect) && slot.C2 != null;
         bool was = _loading;
         _loading = true;
         _fourChk.Visible = four;
@@ -1390,8 +1422,8 @@ public sealed class MainForm : Form
         _fourChk.Enabled = custom;
         _loading = was;
         bool show34 = four && _fourChk.Checked;
-        Set(_c3Btn, show34 ? "Boja 3" : null, ep.Color3 ?? ep.Color2, custom);
-        Set(_c4Btn, show34 ? "Boja 4" : null, ep.Color4 ?? ep.Color2, custom);
+        Set(_c3Btn, show34 ? L.T("Boja 3") : null, ep.Color3 ?? ep.Color2, custom);
+        Set(_c4Btn, show34 ? L.T("Boja 4") : null, ep.Color4 ?? ep.Color2, custom);
         Set(_bgBtn, slot.Bg, ep.Background, true);
     }
 
@@ -1399,7 +1431,7 @@ public sealed class MainForm : Form
     {
         if (_kbView.Selected.Count == 0)
         {
-            MessageBox.Show(this, "Najprije odaberi tipke na slici tipkovnice.", "G815 Studio", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, L.T("Najprije odaberi tipke na slici tipkovnice."), "SVITAC", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         foreach (var id in _kbView.Selected)
@@ -1409,7 +1441,7 @@ public sealed class MainForm : Form
         }
         if (P.Lighting.Effect is EffectType.Off or EffectType.Wave or EffectType.ColorCycle or EffectType.Audio or EffectType.Screen)
         {
-            _stInfo.Text = "Napomena: boje po tipkama vide se u efektima Statično, Disanje, Reakcija i Valovi.";
+            _stInfo.Text = L.T("Napomena: boje po tipkama vide se u efektima Statično, Disanje, Reakcija i Valovi.");
         }
         _c.LightingChanged(P);
     }
@@ -1432,8 +1464,8 @@ public sealed class MainForm : Form
         {
             var m = _c.GetMacro(P, _editBank, g);
             string desc = m == null || m.Steps.Count == 0
-                ? "(prazno)"
-                : $"{(string.IsNullOrWhiteSpace(m.Name) ? "bez naziva" : m.Name)}  ·  {m.Steps.Count} kor.";
+                ? L.T("(prazno)")
+                : L.F("{0}  ·  {1} kor.", string.IsNullOrWhiteSpace(m.Name) ? L.T("bez naziva") : m.Name, m.Steps.Count);
             _gList.Items.Add($"G{g}   {desc}");
         }
         _gList.EndUpdate();
@@ -1484,11 +1516,62 @@ public sealed class MainForm : Form
         {
             var m = _c.GetMacro(P, _editBank, g);
             string desc = m == null || m.Steps.Count == 0
-                ? "(prazno)"
-                : $"{(string.IsNullOrWhiteSpace(m.Name) ? "bez naziva" : m.Name)}  ·  {m.Steps.Count} kor.";
+                ? L.T("(prazno)")
+                : L.F("{0}  ·  {1} kor.", string.IsNullOrWhiteSpace(m.Name) ? L.T("bez naziva") : m.Name, m.Steps.Count);
             string text = $"G{g}   {desc}";
             if ((string)_gList.Items[g - 1] != text) _gList.Items[g - 1] = text;
         }
+    }
+
+    /// <summary>G tipka u popisu: veliki „G1“ u boji naglaska i naziv makroa.</summary>
+    private void DrawGItem(object sender, DrawItemEventArgs e)
+    {
+        if (e.Index < 0) return;
+        var g = e.Graphics;
+        var r = e.Bounds;
+        bool sel = (e.State & DrawItemState.Selected) != 0;
+        using (var bg = new SolidBrush(Theme.Input)) g.FillRectangle(bg, r);
+        var card = new Rectangle(r.X, r.Y + 2, r.Width - 1, r.Height - 5);
+        using (var cb = new SolidBrush(Theme.ControlBg)) g.FillRectangle(cb, card);
+        if (sel)
+        {
+            using var lb = new System.Drawing.Drawing2D.LinearGradientBrush(card, Color.FromArgb(60, Theme.Accent), Color.FromArgb(0, Theme.Accent), 0f);
+            g.FillRectangle(lb, card);
+        }
+        using (var p = new Pen(sel ? Theme.Accent : Theme.BorderSoft)) g.DrawRectangle(p, card);
+        string text = _gList.Items[e.Index] as string ?? "";
+        int cut = text.IndexOf("   ", StringComparison.Ordinal);
+        string key = cut > 0 ? text[..cut] : text, desc = cut > 0 ? text[(cut + 3)..] : "";
+        using (var kf = Theme.Heading(13f))
+            TextRenderer.DrawText(g, key, kf, new Rectangle(card.X + 12, card.Y, 50, card.Height), Theme.Accent, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
+        using var df = Theme.UiFont(10.5f);
+        TextRenderer.DrawText(g, desc, df, new Rectangle(card.X + 62, card.Y, card.Width - 68, card.Height), sel ? Theme.Text : Theme.TextSoft,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+    }
+
+    /// <summary>Korak makroa kao točka na vremenskoj crti: vrsta koraka u boji naglaska, zatim vrijednost.</summary>
+    private void DrawStepItem(object sender, DrawItemEventArgs e)
+    {
+        var g = e.Graphics;
+        var r = e.Bounds;
+        bool sel = e.Index >= 0 && (e.State & DrawItemState.Selected) != 0;
+        using (var bg = new SolidBrush(sel ? Color.FromArgb(18, 34, 52) : Theme.Input)) g.FillRectangle(bg, r);
+        if (e.Index < 0) return;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        int n = Math.Max(1, _steps.Items.Count - 1);
+        var lineCol = Theme.Lerp(Theme.Accent, Theme.Plasma, e.Index / (float)n);
+        using (var lp = new Pen(lineCol, 1)) g.DrawLine(lp, r.X + 16, r.Y, r.X + 16, r.Bottom);
+        var c = new PointF(r.X + 16, r.Y + r.Height / 2f);
+        var diamond = new[] { new PointF(c.X, c.Y - 5), new PointF(c.X + 5, c.Y), new PointF(c.X, c.Y + 5), new PointF(c.X - 5, c.Y) };
+        using (var db = new SolidBrush(sel ? lineCol : Theme.Ground)) g.FillPolygon(db, diamond);
+        using (var dp = new Pen(lineCol)) g.DrawPolygon(dp, diamond);
+        string text = _steps.Items[e.Index]?.ToString() ?? "";
+        int cut = text.IndexOf("  ", StringComparison.Ordinal);
+        string kind = cut > 0 ? text[..cut] : text, value = cut > 0 ? text[(cut + 2)..] : "";
+        using var kf = Theme.Mono(8f);
+        TextRenderer.DrawText(g, kind.ToUpperInvariant(), kf, new Rectangle(r.X + 32, r.Y, 150, r.Height), Theme.Accent, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(g, value, _steps.Font, new Rectangle(r.X + 186, r.Y, r.Width - 192, r.Height), Theme.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+        using (var sp = new Pen(Theme.BorderSoft)) g.DrawLine(sp, r.X + 32, r.Bottom - 1, r.Right, r.Bottom - 1);
     }
 
     private int InsertIndex(Macro m) =>
@@ -1535,11 +1618,11 @@ public sealed class MainForm : Form
 
     private void AddDelayStep()
     {
-        string s = PromptDialog.Show(this, "Kašnjenje", "Trajanje u milisekundama:", "100");
+        string s = PromptDialog.Show(this, L.T("Kašnjenje"), L.T("Trajanje u milisekundama:"), "100");
         if (s == null) return;
         if (!int.TryParse(s.Trim(), out int ms) || ms < 0 || ms > 600000)
         {
-            MessageBox.Show(this, "Upiši broj između 0 i 600000.", "Kašnjenje", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, L.T("Upiši broj između 0 i 600000."), L.T("Kašnjenje"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
         Insert(new MacroStep { Type = StepType.Delay, DelayMs = ms });
@@ -1547,16 +1630,16 @@ public sealed class MainForm : Form
 
     private void AddTextStep()
     {
-        string s = PromptDialog.Show(this, "Upiši tekst", "Tekst koji će makro utipkati (podržava i hrvatske znakove):", "", true);
+        string s = PromptDialog.Show(this, L.T("Upiši tekst"), L.T("Tekst koji će makro utipkati (podržava i hrvatske znakove):"), "", true);
         if (string.IsNullOrEmpty(s)) return;
         Insert(new MacroStep { Type = StepType.Text, Text = s });
     }
 
     private void AddRunStep()
     {
-        using var ofd = new OpenFileDialog { Title = "Program ili datoteka za pokretanje", Filter = "Programi|*.exe;*.bat;*.cmd;*.lnk|Sve datoteke|*.*" };
+        using var ofd = new OpenFileDialog { Title = L.T("Program ili datoteka za pokretanje"), Filter = L.T("Programi|*.exe;*.bat;*.cmd;*.lnk|Sve datoteke|*.*") };
         if (ofd.ShowDialog(this) != DialogResult.OK) return;
-        string args = PromptDialog.Show(this, "Argumenti", "Argumenti naredbenog retka (može ostati prazno):", "") ?? "";
+        string args = PromptDialog.Show(this, L.T("Argumenti"), L.T("Argumenti naredbenog retka (može ostati prazno):"), "") ?? "";
         Insert(new MacroStep { Type = StepType.Run, Path = ofd.FileName, Args = args });
     }
 
@@ -1571,7 +1654,7 @@ public sealed class MainForm : Form
     private void AddInputStep()
     {
         if (CurrentG == 0) return;
-        var step = new MacroStep { Type = StepType.Input, Variable = "vrijednost" };
+        var step = new MacroStep { Type = StepType.Input, Variable = L.T("vrijednost") };
         using var d = new InputStepDialog(step);
         if (d.ShowDialog(this) == DialogResult.OK) Insert(step);
     }
@@ -1584,11 +1667,11 @@ public sealed class MainForm : Form
         switch (s.Type)
         {
             case StepType.Delay:
-                string d = PromptDialog.Show(this, "Kašnjenje", "Trajanje u milisekundama:", s.DelayMs.ToString());
+                string d = PromptDialog.Show(this, L.T("Kašnjenje"), L.T("Trajanje u milisekundama:"), s.DelayMs.ToString());
                 if (d != null && int.TryParse(d.Trim(), out int ms) && ms >= 0) s.DelayMs = ms;
                 break;
             case StepType.Text:
-                string t = PromptDialog.Show(this, "Tekst", "Tekst:", s.Text, true);
+                string t = PromptDialog.Show(this, L.T("Tekst"), L.T("Tekst:"), s.Text, true);
                 if (t != null) s.Text = t;
                 break;
             case StepType.Http:
@@ -1604,7 +1687,7 @@ public sealed class MainForm : Form
                 break;
             }
             case StepType.Run:
-                string a = PromptDialog.Show(this, "Argumenti", $"Argumenti za {Path.GetFileName(s.Path)}:", s.Args);
+                string a = PromptDialog.Show(this, L.T("Argumenti"), L.F("Argumenti za {0}:", Path.GetFileName(s.Path)), s.Args);
                 if (a != null) s.Args = a;
                 break;
             default:
@@ -1643,7 +1726,7 @@ public sealed class MainForm : Form
     private void ClearMacro()
     {
         if (CurrentG == 0) return;
-        if (MessageBox.Show(this, $"Obrisati makro na M{_editBank} / G{CurrentG}?", "Očisti", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+        if (MessageBox.Show(this, L.F("Obrisati makro na M{0} / G{1}?", _editBank, CurrentG), L.T("Očisti"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
         P.Macros.Remove(Profile.MacroKey(_editBank, CurrentG));
         _c.SaveSoon();
@@ -1673,20 +1756,20 @@ public sealed class MainForm : Form
     {
         if (IsDisposed) return;
         bool rec = _c.Recorder.IsRecording;
-        _recBtn.Text = rec ? "■ Zaustavi snimanje" : "● Snimi";
+        _recBtn.Text = rec ? L.T("■ Zaustavi snimanje") : L.T("● Snimi");
         Theme.StyleFlat(_recBtn, rec ? Color.FromArgb(70, 22, 30) : Theme.Danger, Theme.Danger);
         _recBtn.ForeColor = rec ? Color.FromArgb(255, 170, 178) : Color.FromArgb(26, 5, 8);
         _recInfo.Text = !rec ? "" :
             _c.HardwareRecording
-                ? $"Snimam s tipkovnice (MR)… koraka: {_c.Recorder.Count}. Pritisni G tipku za spremanje."
-                : $"Snimam… koraka: {_c.Recorder.Count}. Tipke koje pritišćeš ne utječu na ovaj prozor. Klikni \"Zaustavi\" mišem.";
+                ? L.F("Snimam s tipkovnice (MR)… koraka: {0}. Pritisni G tipku za spremanje.", _c.Recorder.Count)
+                : L.F("Snimam… koraka: {0}. Tipke koje pritišćeš ne utječu na ovaj prozor. Klikni \"Zaustavi\" mišem.", _c.Recorder.Count);
     }
 
     private async Task TestMacro()
     {
         var m = Cur(false);
         if (m == null || m.Steps.Count == 0) return;
-        _stInfo.Text = "Makro kreće za 3 sekunde – prebaci se u ciljni prozor…";
+        _stInfo.Text = L.T("Makro kreće za 3 sekunde – prebaci se u ciljni prozor…");
         await Task.Delay(3000);
         _c.Player.Play(m);
         _stInfo.Text = "";
@@ -1709,8 +1792,8 @@ public sealed class MainForm : Form
     private void NewProfile(bool duplicate)
     {
         var src = SelectedProfile ?? P;
-        string name = PromptDialog.Show(this, duplicate ? "Dupliciraj profil" : "Novi profil", "Naziv profila:",
-            UniqueName(duplicate ? src.Name + " (kopija)" : "Novi profil"));
+        string name = PromptDialog.Show(this, duplicate ? L.T("Dupliciraj profil") : L.T("Novi profil"), L.T("Naziv profila:"),
+            UniqueName(duplicate ? src.Name + " (kopija)" : L.T("Novi profil")));
         if (string.IsNullOrWhiteSpace(name)) return;
         name = UniqueName(name.Trim());
         Profile p;
@@ -1735,7 +1818,7 @@ public sealed class MainForm : Form
     {
         var p = SelectedProfile;
         if (p == null) return;
-        string name = PromptDialog.Show(this, "Preimenuj profil", "Novi naziv:", p.Name);
+        string name = PromptDialog.Show(this, L.T("Preimenuj profil"), L.T("Novi naziv:"), p.Name);
         if (string.IsNullOrWhiteSpace(name) || name.Trim() == p.Name) return;
         name = UniqueName(name.Trim());
         bool wasActive = _c.Settings.ActiveProfile == p.Name;
@@ -1751,10 +1834,10 @@ public sealed class MainForm : Form
         if (p == null) return;
         if (_c.Settings.Profiles.Count <= 1)
         {
-            MessageBox.Show(this, "Mora postojati barem jedan profil.", "Obriši", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, L.T("Mora postojati barem jedan profil."), L.T("Obriši"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        if (MessageBox.Show(this, $"Obrisati profil \"{p.Name}\" sa svim bojama i makroima?", "Obriši",
+        if (MessageBox.Show(this, L.F("Obrisati profil \"{0}\" sa svim bojama i makroima?", p.Name), L.T("Obriši"),
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
         _c.Settings.Profiles.Remove(p);
         if (_c.Settings.ActiveProfile == p.Name)
@@ -1792,7 +1875,7 @@ public sealed class MainForm : Form
     private void AddAppFromFile()
     {
         if (SelectedProfile == null) return;
-        using var ofd = new OpenFileDialog { Filter = "Programi (*.exe)|*.exe", Title = "Odaberi program" };
+        using var ofd = new OpenFileDialog { Filter = L.T("Programi (*.exe)|*.exe"), Title = L.T("Odaberi program") };
         if (ofd.ShowDialog(this) == DialogResult.OK) AddApp(Path.GetFileName(ofd.FileName));
     }
 
