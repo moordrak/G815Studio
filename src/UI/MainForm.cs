@@ -63,6 +63,8 @@ public sealed class MainForm : Form
     private Label _pcStatus;
     private ComboBox _pcChannel;
     private NumericUpDown _pcLeds;
+    private CheckBox _ramEnable;
+    private Label _ramStatus;
     private readonly System.Windows.Forms.Timer _zoneTimer = new() { Interval = 1000 };
 
     // koje boje i postavke koristi pojedini efekt (null = ne koristi)
@@ -498,6 +500,7 @@ public sealed class MainForm : Form
         Q("Mediji i gornje tipke", k => k.Group is "media" or "top");
         Q("Miš", k => k.Group == "mouse");
         Q("Računalo", k => k.Group == "pc");
+        Q("Memorija", k => k.Group == "ram");
         quick.Controls.Add(Ui.Btn("Poništi odabir", (_, _) => _kbView.ClearSelection(), 200));
         controls.Controls.Add(Ui.Group("Brzi odabir (Ctrl = dodaj)", quick));
 
@@ -917,6 +920,16 @@ public sealed class MainForm : Form
         });
         // ---- memorija (Kingston Fury) – zasad samo dijagnostika, bez upisa
         var ram = Ui.Flow(FlowDirection.TopDown);
+        _ramEnable = new CheckBox { Text = "Upravljaj osvjetljenjem memorije (Kingston Fury) – prati efekte", AutoSize = true };
+        _ramEnable.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.RamEnabled = _ramEnable.Checked;
+            _c.RamSettingsChanged();
+        };
+        ram.Controls.Add(_ramEnable);
+        _ramStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3) };
+        ram.Controls.Add(_ramStatus);
         var ramStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3), Text = "Nije ispitano." };
         Button ramBtn = null;
         ramBtn = Ui.Btn("Ispitaj RAM (samo čitanje)", async (_, _) =>
@@ -941,10 +954,11 @@ public sealed class MainForm : Form
             AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
             Text = "Memorija se ne vidi kao USB uređaj, nego preko SMBus-a na ploči, za što treba drajver PawnIO (pawnio.eu). " +
                    "Program ga nosi u sebi: kad zatreba, privremeno ga instalira, a pri izlazu ga ukloni (ako ga nisi imao od prije). " +
-                   "Program pritom mora raditi kao administrator. Ovaj korak ništa ne upisuje u memoriju, samo čita koje adrese odgovaraju i zapisuje ih u log."
+                   "Program pritom mora raditi kao administrator. Dok G815 Studio upravlja memorijom, SignalRGB, OpenRGB i slični programi ne smiju raditi. " +
+                   "„Ispitaj RAM“ samo čita adrese i zapisuje ih u log."
         });
         flow.Controls.Add(Ui.Group("Računalo (ASRock RGB)", pc));
-        flow.Controls.Add(Ui.Group("Memorija (Kingston Fury) – ispitivanje", ram));
+        flow.Controls.Add(Ui.Group("Memorija (Kingston Fury)", ram));
 
         page.Controls.Add(flow);
         return page;
@@ -984,6 +998,7 @@ public sealed class MainForm : Form
             _mouseSolid.Checked = !_c.Settings.MouseFollow;
             Ui.PaintSwatch(_mouseColorBtn, ColorUtil.Parse(_c.Settings.MouseColor));
             _pcEnable.Checked = _c.Settings.PcEnabled;
+            _ramEnable.Checked = _c.Settings.RamEnabled;
             _pcFollow.Checked = _c.Settings.PcFollow;
             _pcSolid.Checked = !_c.Settings.PcFollow;
             _pcSwap.Checked = _c.Settings.PcSwapRG;
@@ -1069,6 +1084,7 @@ public sealed class MainForm : Form
 
         _mouseStatus.Text = !_c.Settings.MouseEnabled ? "Isključeno." : _c.Mouse.Status;
         _pcStatus.Text = !_c.Settings.PcEnabled ? "Isključeno." : _c.Pc.Status;
+        _ramStatus.Text = _c.RamStatus;
         RefreshPcChannels();
 
         string fg = _c.ForegroundApp ?? "?";

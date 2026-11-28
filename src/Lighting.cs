@@ -525,6 +525,9 @@ public sealed class LightingEngine : IDisposable
 
     /// <summary>ASRock RGB kontroler (null = nema). Njegove zone (0xE0–0xEF) se ne šalju tipkovnici.</summary>
     public AsrockPolychrome Pc { get; set; }
+    /// <summary>Kingston Fury memorija (null = nema). Njene zone (0xC0–0xCF) se ne šalju tipkovnici.</summary>
+    public KingstonFury Ram { get; set; }
+    private int[] _ramZones = Array.Empty<int>();
     public volatile bool PcFollow = true;
     private int[] _pcZones = Array.Empty<int>();
     /// <summary>Zone od ove naviše su virtualne (računalo, miš) i nikad ne idu tipkovnici.</summary>
@@ -534,11 +537,14 @@ public sealed class LightingEngine : IDisposable
     {
         var mz = defs.Where(k => k.Shape == "mouse").Select(k => (int)k.Zone).ToArray();
         var pz = defs.Where(k => k.Shape == "pc").Select(k => (int)k.Zone).ToArray();
+        var rz = defs.Where(k => k.Shape == "ram").Select(k => (int)k.Zone).ToArray();
         lock (_lock)
         {
             Array.Clear(_mouseZone);
             foreach (int z in mz) _mouseZone[z] = true;
             foreach (int z in pz) _mouseZone[z] = true;
+            foreach (int z in rz) _mouseZone[z] = true;
+            _ramZones = rz;
             _mouseZones = mz;
             _pcZones = pz;
         }
@@ -636,6 +642,7 @@ public sealed class LightingEngine : IDisposable
             if (_kb.IsConnected) Send(keys);
             PushMouse();
             PushPc();
+            PushRam();
             UpdateStats();
 
             int fps = Math.Clamp(Fps, 5, 60);
@@ -655,6 +662,18 @@ public sealed class LightingEngine : IDisposable
         var cols = new Color[zones.Length];
         for (int i = 0; i < zones.Length; i++) cols[i] = _frame[zones[i]];
         m.SetColors(cols);
+    }
+
+    private void PushRam()
+    {
+        var ram = Ram;
+        if (ram == null || !ram.IsConnected) return;
+        int[] zones;
+        lock (_lock) zones = _ramZones;
+        if (zones.Length == 0) return;
+        var cols = new Color[zones.Length];
+        for (int i = 0; i < zones.Length; i++) cols[i] = _frame[zones[i]];
+        ram.SetSegmentColors(cols, KeyLayouts.RamSegments);
     }
 
     private void PushPc()

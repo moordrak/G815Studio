@@ -22,6 +22,9 @@ public sealed class AppController : IDisposable
     public LogitechMouse Mouse { get; } = new();
     private bool _mouseConnecting;
     public AsrockPolychrome Pc { get; } = new();
+    public KingstonFury Ram { get; } = new();
+    private bool _ramConnecting;
+    private int _ramInLayout = -1;
     private bool _pcConnecting;
     private int _pcTicks;
     private string _pcLayoutKey = "";
@@ -51,7 +54,8 @@ public sealed class AppController : IDisposable
     {
         _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         Settings = SettingsStore.Load();
-        Engine = new LightingEngine(Keyboard) { Fps = Settings.Fps, Mouse = Mouse, Pc = Pc };
+        Engine = new LightingEngine(Keyboard) { Fps = Settings.Fps, Mouse = Mouse, Pc = Pc, Ram = Ram };
+        Ram.Changed += () => _ui.Post(_ => OnRamChanged(), null);
         Pc.SwapRG = Settings.PcSwapRG;
         Pc.Changed += () => _ui.Post(_ => OnPcChanged(), null);
         Mouse.HostMode = Settings.MouseHostMode;
@@ -91,6 +95,7 @@ public sealed class AppController : IDisposable
         TryConnect();
         TryConnectMouse();
         TryConnectPc();
+        TryConnectRam();
     }
 
     // ------------------------------------------------------------ spajanje
@@ -150,7 +155,9 @@ public sealed class AppController : IDisposable
         _mouseZonesInLayout = mz;
         var pc = PcChannelsForLayout();
         _pcLayoutKey = PcLayoutKey(pc);
-        Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides, mz, pc);
+        int ram = Settings.RamEnabled && Ram.IsConnected ? Ram.StickCount : PreviewRamSticks;
+        _ramInLayout = ram;
+        Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides, mz, pc, ram);
         Engine.SetKeys(Keys);
         StateChanged?.Invoke();
     }
@@ -459,6 +466,45 @@ public sealed class AppController : IDisposable
         StateChanged?.Invoke();
     }
 
+    // ------------------------------------------------------------ memorija (Kingston Fury)
+
+    /// <summary>Samo za snimke zaslona: nacrtaj module memorije i kad nisu spojeni.</summary>
+    public int PreviewRamSticks { get; set; }
+
+    /// <summary>Spajanje memorije: jednom pri pokretanju i kad se opcija uključi (SMBus se ne pretražuje stalno).</summary>
+    public void TryConnectRam()
+    {
+        if (!Settings.RamEnabled || Ram.IsConnected || _ramConnecting || _disposed) return;
+        if (!PawnIoHost.IsElevated)
+        {
+            StateChanged?.Invoke();
+            return;
+        }
+        _ramConnecting = true;
+        Task.Run(() => Ram.TryConnect()).ContinueWith(_ => _ui.Post(__ => { _ramConnecting = false; StateChanged?.Invoke(); }, null));
+    }
+
+    public string RamStatus =>
+        !Settings.RamEnabled ? "Isključeno." :
+        !PawnIoHost.IsElevated ? "Za memoriju program mora raditi kao administrator." :
+        _ramConnecting ? "Spajam…" : Ram.Status;
+
+    public void RamSettingsChanged()
+    {
+        if (!Settings.RamEnabled) Task.Run(() => Ram.Release());
+        else TryConnectRam();
+        SaveSoon();
+        StateChanged?.Invoke();
+    }
+
+    private void OnRamChanged()
+    {
+        if (_disposed) return;
+        int ram = Settings.RamEnabled && Ram.IsConnected ? Ram.StickCount : PreviewRamSticks;
+        if (ram != _ramInLayout) RebuildKeys();
+        StateChanged?.Invoke();
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -475,6 +521,7 @@ public sealed class AppController : IDisposable
         Keyboard.Release(dark);
         Mouse.Release(dark);
         Pc.Release(dark);
+        Ram.Release(dark);
         PawnIoHost.RemoveIfOurs();
         SettingsStore.Save(Settings);
     }

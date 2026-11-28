@@ -108,7 +108,9 @@ public sealed class KeyboardView : Control
 
     // ------------------------------------------------------------------ geometrija
 
-    private IEnumerable<KeyDef> RealKeys => _keys.Where(k => k.Shape != "logo" && k.Shape != "round" && k.Shape != "mouse" && k.Shape != "pc");
+    private IEnumerable<KeyDef> RealKeys => _keys.Where(k => k.Shape != "logo" && k.Shape != "round" && k.Shape != "mouse" && k.Shape != "pc" && k.Shape != "ram");
+    /// <summary>Moduli memorije: po modulu zone odozdo prema gore.</summary>
+    private List<List<KeyDef>> RamSticks => _keys.Where(k => k.Shape == "ram").GroupBy(k => k.X).OrderBy(g => g.Key).Select(g => g.OrderByDescending(k => k.Y).ToList()).ToList();
     private IEnumerable<KeyDef> MouseLeds => _keys.Where(k => k.Shape == "mouse");
     /// <summary>Zone računala (ASRock), po redovima: jedan red = jedan izlaz kontrolera.</summary>
     private List<List<KeyDef>> PcRows => _keys.Where(k => k.Shape == "pc").GroupBy(k => k.Y).OrderBy(g => g.Key).Select(g => g.OrderBy(k => k.X).ToList()).ToList();
@@ -126,6 +128,12 @@ public sealed class KeyboardView : Control
         float th = mouse ? Math.Max(hu, KeyLayouts.MouseY + KeyLayouts.MouseH + 0.3f) : hu;
         var pcKeys = _keys.Where(k => k.Shape == "pc").ToList();
         if (pcKeys.Count > 0) th = Math.Max(th, pcKeys.Max(k => k.Y + k.H) + 0.35f);
+        var ramKeys = _keys.Where(k => k.Shape == "ram").ToList();
+        if (ramKeys.Count > 0)
+        {
+            th = Math.Max(th, ramKeys.Max(k => k.Y + k.H) + 0.35f);
+            tw = Math.Max(tw, PadUnits + ramKeys.Max(k => k.X + k.W) + 0.3f);
+        }
         float s = Math.Max(8, Math.Min((Width - 24) / tw, (Height - 24) / th));
         var g = new Geo { S = s, F = s / RefU, PadX = PadUnits * s, Bw = wu * s, Bh = hu * s, HasMouse = mouse };
         g.Bx = (Width - tw * s) / 2;
@@ -156,6 +164,9 @@ public sealed class KeyboardView : Control
         foreach (var row in PcRows)
             foreach (var k in row)
                 if (RectangleF.Inflate(g.Rect(k), 3 * g.F, 3 * g.F).Contains(p)) return k;
+        foreach (var stick in RamSticks)
+            foreach (var k in stick)
+                if (RamSegRect(g, k).Contains(p)) return k;
         return RealKeys.LastOrDefault(k => g.Rect(k).Contains(p));
     }
 
@@ -244,6 +255,7 @@ public sealed class KeyboardView : Control
         DrawRoller(gr, g);
         if (g.HasMouse) DrawMouseBody(gr, g);
         DrawPcStrips(gr, g);
+        DrawRamBodies(gr, g);
 
         // tipke
         foreach (var k in RealKeys)
@@ -500,6 +512,82 @@ public sealed class KeyboardView : Control
                 if (Selected.Contains(row[i].Id))
                     using (var sp = Rounded(RectangleF.Inflate(r, 2 * f, 2 * f), 5 * f)) gr.DrawPath(selPen, sp);
             }
+        }
+    }
+
+    // ------------------------------------------------------------------ memorija (Kingston Fury)
+
+    private static RectangleF RamSegRect(Geo g, KeyDef k)
+    {
+        var a = g.Pt(k.X, k.Y);
+        return new RectangleF(a.X, a.Y, k.W * g.S, k.H * g.S);
+    }
+
+    private static RectangleF RamStickRect(Geo g, List<KeyDef> stick)
+    {
+        float top = stick.Min(k => k.Y), bottom = stick.Max(k => k.Y + k.H);
+        var a = g.Pt(stick[0].X - 0.12f, top - 0.12f);
+        return new RectangleF(a.X, a.Y, (stick[0].W + 0.24f) * g.S, (bottom - top + 0.24f) * g.S);
+    }
+
+    private void DrawRamBodies(Graphics gr, Geo g)
+    {
+        float f = g.F;
+        var sticks = RamSticks;
+        if (sticks.Count == 0) return;
+        using var font = new Font("Segoe UI Semibold", Math.Max(6f, 9f * f), FontStyle.Regular, GraphicsUnit.Pixel);
+        using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Near };
+        using var textBrush = new SolidBrush(Muted);
+        foreach (var stick in sticks)
+        {
+            var r = RamStickRect(g, stick);
+            using (var sh = Rounded(new RectangleF(r.X + 3 * f, r.Y + 5 * f, r.Width, r.Height), 4 * f))
+            using (var sb = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
+                gr.FillPath(sb, sh);
+            using var body = Rounded(r, 4 * f);
+            using (var lg = new LinearGradientBrush(r, C("#26282d"), C("#0b0c0e"), 0f)) gr.FillPath(lg, body);
+            using var hi = new Pen(Color.FromArgb(28, 255, 255, 255), Math.Max(1, f));
+            gr.DrawPath(hi, body);
+        }
+        var first = RamStickRect(g, sticks[0]);
+        var last = RamStickRect(g, sticks[^1]);
+        gr.DrawString("RAM", font, textBrush, new RectangleF(first.X, last.Bottom + 4 * f, last.Right - first.X, 14 * f), sf);
+    }
+
+    private void DrawRamLeds(Graphics gr, Geo g, Pen selPen)
+    {
+        float f = g.F;
+        foreach (var stick in RamSticks)
+        {
+            var body = RamStickRect(g, stick);
+            var bar = RectangleF.Inflate(body, -4 * f, -4 * f);
+            if (bar.Width < 2 || bar.Height < 2) continue;
+            var cols = stick.Select(k => ColorOf?.Invoke(k) ?? Color.Black).ToArray();
+            // prijelaz odozdo prema gore, kao što se šalje LED-icama
+            using (var path = Rounded(bar, 3 * f))
+            using (var lb = new LinearGradientBrush(bar, cols[0], cols[^1], 270f))
+            {
+                if (cols.Length > 1)
+                {
+                    var pos = Enumerable.Range(0, cols.Length).Select(i => (float)i / (cols.Length - 1)).ToArray();
+                    lb.InterpolationColors = new ColorBlend { Colors = cols, Positions = pos };
+                }
+                gr.FillPath(lb, path);
+            }
+            for (int i = 0; i < stick.Count; i++)
+            {
+                if (IsDark(cols[i])) continue;
+                var r = RamSegRect(g, stick[i]);
+                for (int j = 3; j >= 1; j--)
+                {
+                    var gl = RectangleF.Inflate(r, j * 3f * f, j * 2f * f);
+                    using var gb = new SolidBrush(Color.FromArgb(18 - j * 4, cols[i]));
+                    gr.FillEllipse(gb, gl);
+                }
+            }
+            foreach (var k in stick)
+                if (Selected.Contains(k.Id))
+                    using (var sp = Rounded(RectangleF.Inflate(RamSegRect(g, k), 1.5f * f, 1.5f * f), 3 * f)) gr.DrawPath(selPen, sp);
         }
     }
 
@@ -872,6 +960,7 @@ public sealed class KeyboardView : Control
         // 5) LED-ice miša: sjaj po tijelu miša i svijetleća točka
         if (g.HasMouse) DrawMouseLeds(gr, g, selPen);
         DrawPcLeds(gr, g, selPen);
+        DrawRamLeds(gr, g, selPen);
 
         // 6) svijetleće slovo u gornjem lijevom kutu (zona loga)
         var logo = Find("LOGO");

@@ -45,8 +45,13 @@ public static class KeyLayouts
     public const byte PcZoneBase = 0xE0;
     public const float PcY = 9.3f, PcRowH = 0.85f, PcX = 1.5f, PcW = 22.5f;
 
+    // Memorija (Kingston Fury): okomiti moduli ispod miša; virtualne zone 0xC0–0xCF (po modulu RamSegments zona, odozdo)
+    public const byte RamZoneBase = 0xC0;
+    public const int RamSegments = 4;
+    public const float RamX = 25.9f, RamY = 9.3f, RamH = 3.4f, RamW = 0.55f, RamGap = 0.95f;
+
     public static List<KeyDef> Build(bool iso, IDictionary<string, int> overrides, int mouseZones = 0,
-                                     IReadOnlyList<(string Name, int Segments)> pcChannels = null)
+                                     IReadOnlyList<(string Name, int Segments)> pcChannels = null, int ramSticks = 0)
     {
         var keys = new List<KeyDef>();
         const float ox = 1.5f, oy = 1.5f;   // oy: gornja traka s okruglim tipkama, kotačićem i logom
@@ -222,6 +227,21 @@ public static class KeyLayouts
                     });
                 }
                 row++;
+            }
+        }
+
+        for (int s = 0; s < Math.Min(ramSticks, 16 / RamSegments); s++)
+        {
+            for (int i = 0; i < RamSegments; i++)
+            {
+                byte z = (byte)(RamZoneBase + s * RamSegments + i);
+                float segH = RamH / RamSegments;
+                keys.Add(new KeyDef
+                {
+                    Id = $"RAM{s}_{i}", Label = $"RAM {s + 1} · {i + 1}", DefaultZone = z, Zone = z,
+                    X = RamX + s * RamGap, Y = RamY + RamH - (i + 1) * segH, W = RamW, H = segH,
+                    Group = "ram", Shape = "ram"
+                });
             }
         }
 

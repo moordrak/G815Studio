@@ -111,6 +111,28 @@ public sealed class PawnIoSmbus : IDisposable
         }
     }
 
+    /// <summary>Upis jednog bajta u registar uređaja (SMBus write byte data). Vraća true ako je uređaj potvrdio.</summary>
+    public bool WriteByteData(byte addr, byte reg, byte value)
+    {
+        var input = new ulong[9];
+        input[0] = addr;
+        input[1] = 0;            // I2C_SMBUS_WRITE
+        input[2] = reg;
+        input[3] = SizeByteData;
+        input[4] = value;
+        var output = new ulong[5];
+        bool locked = false;
+        try
+        {
+            try { locked = _mutex != null && _mutex.WaitOne(1000); } catch (AbandonedMutexException) { locked = true; }
+            return Exec("ioctl_smbus_xfer", input, output);
+        }
+        finally
+        {
+            if (locked) _mutex?.ReleaseMutex();
+        }
+    }
+
     public int ReadByte(byte addr) => XferRead(addr, 0, SizeByte) is { } o ? (int)(o[0] & 0xFF) : -1;
     public int ReadByteData(byte addr, byte reg) => XferRead(addr, reg, SizeByteData) is { } o ? (int)(o[0] & 0xFF) : -1;
     public int ReadWordData(byte addr, byte reg) => XferRead(addr, reg, SizeWordData) is { } o ? (int)(o[0] & 0xFFFF) : -1;
