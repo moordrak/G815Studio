@@ -27,7 +27,7 @@ public sealed class AsrockPolychrome : IDisposable
 
     private const byte CmdSetZone = 0x10, CmdReadZone = 0x11, CmdCommit = 0x12, CmdReadHeader = 0x14, CmdWriteHeader = 0x15;
     private const byte CfgPresent = 0x01, CfgLedCount = 0x02, CfgRgSwap = 0x03;
-    private const byte ModeDirect = 0x0F, ChunkFirst = 0xE3, ChunkNext = 0xE4;
+    private const byte ModeRainbow = 0x0E, ModeDirect = 0x0F, ChunkFirst = 0xE3, ChunkNext = 0xE4;
     private const byte NotPresent = 0x1E;
     private const int AddressableMax = 100;
     private const int R = 1;            // pomak odgovora zbog report ID-a
@@ -392,8 +392,11 @@ public sealed class AsrockPolychrome : IDisposable
                 Request(CmdWriteHeader, CfgRgSwap, (4, _rgSwapOriginal));
                 foreach (var s in _saved)
                 {
-                    byte mode = s.Mode is 0xE2 or 0xE3 ? ModeDirect : s.Mode;
-                    Request(CmdSetZone, s.Zone, (4, mode), (5, s.R), (6, s.G), (7, s.B), (8, s.Speed), (9, 0xFF));
+                    // izravni način (0x0F, 0xE2, 0xE3) bez programa znači ugašene LED-ice, pa se tada vraća duga
+                    if (s.Mode is ModeDirect or 0xE2 or 0xE3)
+                        Request(CmdSetZone, s.Zone, (4, ModeRainbow), (8, 0xE0), (9, 0xFF));
+                    else
+                        Request(CmdSetZone, s.Zone, (4, s.Mode), (5, s.R), (6, s.G), (7, s.B), (8, s.Speed), (9, 0xFF));
                 }
                 Log.Write("ASRock: vraćeni prijašnji načini rada.");
             }
