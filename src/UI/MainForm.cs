@@ -915,7 +915,29 @@ public sealed class MainForm : Form
                    "Broj LED-ica mijenjaj samo za ARGB izlaze: upisuje se u kontroler na ploči i vrijedi i za ASRockov program. " +
                    "Pri izlazu iz programa ploča se vraća na svoje prijašnje osvjetljenje. ASRock Polychrome Sync mora biti zatvoren."
         });
+        // ---- memorija (Kingston Fury) – zasad samo dijagnostika, bez upisa
+        var ram = Ui.Flow(FlowDirection.TopDown);
+        var ramStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3), Text = "Nije ispitano." };
+        Button ramBtn = null;
+        ramBtn = Ui.Btn("Ispitaj RAM (samo čitanje)", async (_, _) =>
+        {
+            ramBtn.Enabled = false;
+            ramStatus.Text = "Ispitujem SMBus…";
+            try { ramStatus.Text = await Task.Run(RamProbe.Run) + "  Detalji su u log.txt."; }
+            catch (Exception ex) { ramStatus.Text = "Greška: " + ex.Message; }
+            finally { ramBtn.Enabled = true; }
+        }, 220);
+        ram.Controls.Add(ramBtn);
+        ram.Controls.Add(ramStatus);
+        ram.Controls.Add(new Label
+        {
+            AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
+            Text = "Memorija se ne vidi kao USB uređaj, nego preko SMBus-a na ploči. Za to treba instalirati PawnIO (pawnio.eu), " +
+                   "staviti modul SmbusI801.bin pokraj G815Studio.exe i pokrenuti program kao administrator. " +
+                   "Ovaj korak ništa ne upisuje, samo čita koje adrese odgovaraju i zapisuje ih u log."
+        });
         flow.Controls.Add(Ui.Group("Računalo (ASRock RGB)", pc));
+        flow.Controls.Add(Ui.Group("Memorija (Kingston Fury) – ispitivanje", ram));
 
         page.Controls.Add(flow);
         return page;

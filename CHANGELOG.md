@@ -5,6 +5,7 @@
 - **RGB osvjetljenje računala (ASRock Polychrome USB):** program pronalazi RGB kontroler na ASRock pločama (npr. B760M Pro RS), prebacuje ga u izravni način i šalje boje svim LED-icama na ARGB i RGB headerima. Izlazi se crtaju kao trake ispod tipkovnice, pa svi efekti prelaze i na ventilatore i LED trake (s glatkim prijelazom između zona). Uključuje se u *Postavke → Računalo (ASRock RGB)*, a moguće je i jedna boja, zamjena crvene i zelene te upis broja LED-ica po ARGB izlazu. Pri izlazu ploča se vraća na prijašnje osvjetljenje.
 - **Pri izlazu se sve gasi:** tipkovnica, miš i ASRock izlazi ostaju ugašeni nakon zatvaranja programa (tipkovnica ne vraća ugrađene efekte). Može se isključiti u *Postavke → Općenito*. Nakon ponovnog pokretanja računala tipkovnica i miš same vraćaju svoje ugrađene efekte dok se program ne pokrene.
 - Miš i ASRock trake pojavljuju se na slici i kad se spoje tek nakon otvaranja prozora (prije se slika nije osvježila).
+- **Memorija (Kingston Fury), 1. korak:** *Postavke → Memorija* ima gumb „Ispitaj RAM (samo čitanje)“. Preko PawnIO drajvera i modula SmbusI801.bin čita koje adrese na SMBus-u odgovaraju (SPD i RGB čipovi) i zapisuje ih u log. Ništa se ne upisuje.
 - U `log.txt` se zapisuje što je pronađeno na ASRock kontroleru (izlazi, broj LED-ica, sirovi odgovori), za provjeru na stvarnoj ploči.
 
 ## v1.7.1
