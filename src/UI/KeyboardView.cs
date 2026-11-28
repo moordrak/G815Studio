@@ -108,8 +108,10 @@ public sealed class KeyboardView : Control
 
     // ------------------------------------------------------------------ geometrija
 
-    private IEnumerable<KeyDef> RealKeys => _keys.Where(k => k.Shape != "logo" && k.Shape != "round" && k.Shape != "mouse");
+    private IEnumerable<KeyDef> RealKeys => _keys.Where(k => k.Shape != "logo" && k.Shape != "round" && k.Shape != "mouse" && k.Shape != "pc");
     private IEnumerable<KeyDef> MouseLeds => _keys.Where(k => k.Shape == "mouse");
+    /// <summary>Zone računala (ASRock), po redovima: jedan red = jedan izlaz kontrolera.</summary>
+    private List<List<KeyDef>> PcRows => _keys.Where(k => k.Shape == "pc").GroupBy(k => k.Y).OrderBy(g => g.Key).Select(g => g.OrderBy(k => k.X).ToList()).ToList();
 
     private Geo ComputeGeo()
     {
@@ -122,6 +124,8 @@ public sealed class KeyboardView : Control
         bool mouse = _keys.Any(k => k.Shape == "mouse");
         float tw = mouse ? Math.Max(wu, PadUnits + KeyLayouts.MouseX + KeyLayouts.MouseW + 0.3f) : wu;
         float th = mouse ? Math.Max(hu, KeyLayouts.MouseY + KeyLayouts.MouseH + 0.3f) : hu;
+        var pcKeys = _keys.Where(k => k.Shape == "pc").ToList();
+        if (pcKeys.Count > 0) th = Math.Max(th, pcKeys.Max(k => k.Y + k.H) + 0.35f);
         float s = Math.Max(8, Math.Min((Width - 24) / tw, (Height - 24) / th));
         var g = new Geo { S = s, F = s / RefU, PadX = PadUnits * s, Bw = wu * s, Bh = hu * s, HasMouse = mouse };
         g.Bx = (Width - tw * s) / 2;
@@ -149,6 +153,9 @@ public sealed class KeyboardView : Control
             if (rect.Contains(p)) return key;
         foreach (var m in MouseLeds)
             if (RectangleF.Inflate(g.Led(m), 4 * g.F, 4 * g.F).Contains(p)) return m;
+        foreach (var row in PcRows)
+            foreach (var k in row)
+                if (RectangleF.Inflate(g.Rect(k), 3 * g.F, 3 * g.F).Contains(p)) return k;
         return RealKeys.LastOrDefault(k => g.Rect(k).Contains(p));
     }
 
@@ -236,6 +243,7 @@ public sealed class KeyboardView : Control
 
         DrawRoller(gr, g);
         if (g.HasMouse) DrawMouseBody(gr, g);
+        DrawPcStrips(gr, g);
 
         // tipke
         foreach (var k in RealKeys)
@@ -395,6 +403,104 @@ public sealed class KeyboardView : Control
         using (var notch = new Pen(Color.FromArgb(150, 0, 0, 0), Math.Max(1, f)))
             for (float y = wheel.Top + 2 * f; y < wheel.Bottom - f; y += Math.Max(2, 3 * f))
                 gr.DrawLine(notch, wheel.Left + f, y, wheel.Right - f, y);
+    }
+
+    // ------------------------------------------------------------------ računalo (ASRock ARGB/RGB izlazi)
+
+    private static RectangleF PcStripRect(Geo g, List<KeyDef> row)
+    {
+        float y = row[0].Y - 0.1f;
+        var a = g.Pt(KeyLayouts.PcX, y);
+        return new RectangleF(a.X, a.Y, KeyLayouts.PcW * g.S, 0.7f * g.S);
+    }
+
+    private static string PcRowName(KeyDef k)
+    {
+        string n = k.Label;
+        int i = n.IndexOf(" · ", StringComparison.Ordinal);
+        if (i >= 0) n = n[..i];
+        return n.Replace("header ", "").Replace(" / audio", "");
+    }
+
+    private void DrawPcStrips(Graphics gr, Geo g)
+    {
+        float f = g.F;
+        using var font = new Font("Segoe UI Semibold", Math.Max(6f, 9f * f), FontStyle.Regular, GraphicsUnit.Pixel);
+        using var sf = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap };
+        using var textBrush = new SolidBrush(Muted);
+        foreach (var row in PcRows)
+        {
+            var r = PcStripRect(g, row);
+            using (var sh = Rounded(new RectangleF(r.X + 3 * f, r.Y + 5 * f, r.Width, r.Height), r.Height / 2))
+            using (var sb = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
+                gr.FillPath(sb, sh);
+            using (var body = Rounded(r, r.Height / 2))
+            {
+                using (var lg = new LinearGradientBrush(r, C("#24262b"), C("#0b0c0e"), 90f)) gr.FillPath(lg, body);
+                using var hi = new Pen(Color.FromArgb(28, 255, 255, 255), Math.Max(1, f));
+                gr.DrawPath(hi, body);
+            }
+            var label = new RectangleF(g.Bx, r.Y, r.X - g.Bx - 8 * f, r.Height);
+            gr.DrawString(PcRowName(row[0]), font, textBrush, label, sf);
+        }
+    }
+
+    private void DrawPcLeds(Graphics gr, Geo g, Pen selPen)
+    {
+        float f = g.F;
+        foreach (var row in PcRows)
+        {
+            var strip = PcStripRect(g, row);
+            var inner = RectangleF.Inflate(strip, -5 * f, -5 * f);
+            if (inner.Width < 2 || inner.Height < 2) continue;
+            var cols = row.Select(k => ColorOf?.Invoke(k) ?? Color.Black).ToArray();
+
+            // svjetlo trake: prijelaz između zona, kao što kontroler stvarno šalje LED-icama
+            using (var path = Rounded(inner, inner.Height / 2))
+            using (var lb = new LinearGradientBrush(inner, cols[0], cols[^1], 0f))
+            {
+                if (cols.Length > 1)
+                {
+                    var pos = row.Select(k => Math.Clamp((g.Pt(k.CenterX, 0).X - inner.X) / inner.Width, 0f, 1f)).ToList();
+                    var blendCols = new List<Color> { cols[0] };
+                    var blendPos = new List<float> { 0f };
+                    for (int i = 0; i < cols.Length; i++)
+                    {
+                        if (pos[i] <= blendPos[^1]) continue;
+                        blendCols.Add(cols[i]);
+                        blendPos.Add(pos[i]);
+                    }
+                    if (blendPos[^1] < 1f) { blendCols.Add(cols[^1]); blendPos.Add(1f); }
+                    lb.InterpolationColors = new ColorBlend { Colors = blendCols.ToArray(), Positions = blendPos.ToArray() };
+                }
+                else
+                {
+                    lb.InterpolationColors = new ColorBlend { Colors = new[] { cols[0], cols[0] }, Positions = new[] { 0f, 1f } };
+                }
+                gr.FillPath(lb, path);
+            }
+            // sjaj oko trake
+            for (int i = 0; i < row.Count; i++)
+            {
+                if (IsDark(cols[i])) continue;
+                var r = g.Rect(row[i]);
+                for (int j = 3; j >= 1; j--)
+                {
+                    var gl = RectangleF.Inflate(r, j * 6f * f, j * 2.5f * f);
+                    using var gb = new SolidBrush(Color.FromArgb(22 - j * 5, cols[i]));
+                    gr.FillEllipse(gb, gl);
+                }
+            }
+            // oznake zona (mjesta za odabir)
+            for (int i = 0; i < row.Count; i++)
+            {
+                var r = g.Rect(row[i]);
+                var dot = new RectangleF(r.X + r.Width / 2 - 2.5f * f, r.Y + r.Height / 2 - 2.5f * f, 5 * f, 5 * f);
+                using (var db = new SolidBrush(Color.FromArgb(IsDark(cols[i]) ? 60 : 150, 255, 255, 255))) gr.FillEllipse(db, dot);
+                if (Selected.Contains(row[i].Id))
+                    using (var sp = Rounded(RectangleF.Inflate(r, 2 * f, 2 * f), 5 * f)) gr.DrawPath(selPen, sp);
+            }
+        }
     }
 
     private void DrawRoller(Graphics gr, Geo g)
@@ -765,6 +871,7 @@ public sealed class KeyboardView : Control
 
         // 5) LED-ice miša: sjaj po tijelu miša i svijetleća točka
         if (g.HasMouse) DrawMouseLeds(gr, g, selPen);
+        DrawPcLeds(gr, g, selPen);
 
         // 6) svijetleće slovo u gornjem lijevom kutu (zona loga)
         var logo = Find("LOGO");

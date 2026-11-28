@@ -56,6 +56,12 @@ public sealed class MainForm : Form
     private RadioButton _mouseFollow, _mouseSolid;
     private Button _mouseColorBtn;
     private Label _mouseStatus;
+    private CheckBox _pcEnable, _pcSwap;
+    private RadioButton _pcFollow, _pcSolid;
+    private Button _pcColorBtn;
+    private Label _pcStatus;
+    private ComboBox _pcChannel;
+    private NumericUpDown _pcLeds;
     private readonly System.Windows.Forms.Timer _zoneTimer = new() { Interval = 1000 };
 
     // koje boje i postavke koristi pojedini efekt (null = ne koristi)
@@ -490,6 +496,7 @@ public sealed class MainForm : Form
         Q("G tipke + logo", k => k.Group is "g" or "logo");
         Q("Mediji i gornje tipke", k => k.Group is "media" or "top");
         Q("Miš", k => k.Group == "mouse");
+        Q("Računalo", k => k.Group == "pc");
         quick.Controls.Add(Ui.Btn("Poništi odabir", (_, _) => _kbView.ClearSelection(), 200));
         controls.Controls.Add(Ui.Group("Brzi odabir (Ctrl = dodaj)", quick));
 
@@ -833,6 +840,74 @@ public sealed class MainForm : Form
         });
         flow.Controls.Add(Ui.Group("Miš", mouse));
 
+        // ---- računalo (ASRock RGB na matičnoj ploči)
+        var pc = Ui.Flow(FlowDirection.TopDown);
+        _pcEnable = new CheckBox { Text = "Upravljaj RGB osvjetljenjem računala (ASRock Polychrome, ARGB i RGB headeri na ploči)", AutoSize = true };
+        _pcEnable.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.PcEnabled = _pcEnable.Checked;
+            _c.PcSettingsChanged();
+        };
+        pc.Controls.Add(_pcEnable);
+        var pr = Ui.Flow();
+        _pcFollow = new RadioButton { Text = "Prati efekt tipkovnice", AutoSize = true, Margin = new Padding(3, 9, 16, 3) };
+        _pcSolid = new RadioButton { Text = "Jedna boja:", AutoSize = true, Margin = new Padding(3, 9, 6, 3) };
+        _pcFollow.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.PcFollow = _pcFollow.Checked;
+            _c.PcSettingsChanged();
+        };
+        _pcColorBtn = Ui.Btn("Boja računala", (_, _) =>
+        {
+            var col = Ui.PickColor(this, ColorUtil.Parse(_c.Settings.PcColor));
+            if (!col.HasValue) return;
+            _c.Settings.PcColor = ColorUtil.ToHex(col.Value);
+            Ui.PaintSwatch(_pcColorBtn, col.Value);
+            _pcSolid.Checked = true;
+            _c.Settings.PcFollow = false;
+            _c.PcSettingsChanged();
+        }, 140);
+        pr.Controls.Add(_pcFollow);
+        pr.Controls.Add(_pcSolid);
+        pr.Controls.Add(_pcColorBtn);
+        pc.Controls.Add(pr);
+        _pcSwap = new CheckBox { Text = "Zamijeni crvenu i zelenu (ako ventilatori pokazuju zeleno umjesto crvenog)", AutoSize = true, Margin = new Padding(3, 8, 3, 3) };
+        _pcSwap.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.PcSwapRG = _pcSwap.Checked;
+            _c.PcSettingsChanged();
+        };
+        pc.Controls.Add(_pcSwap);
+        var lr = Ui.Flow();
+        lr.Controls.Add(new Label { Text = "Broj LED-ica na izlazu:", AutoSize = true, Margin = new Padding(3, 9, 6, 3) });
+        _pcChannel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220, Margin = new Padding(3, 5, 6, 3) };
+        _pcLeds = new NumericUpDown { Minimum = 0, Maximum = 100, Width = 70, Margin = new Padding(3, 5, 6, 3) };
+        _pcChannel.SelectedIndexChanged += (_, _) =>
+        {
+            if (_pcChannel.SelectedItem is AsrockChannel ch) _pcLeds.Value = Math.Clamp(ch.LedCount, 0, 100);
+        };
+        lr.Controls.Add(_pcChannel);
+        lr.Controls.Add(_pcLeds);
+        lr.Controls.Add(Ui.Btn("Upiši u kontroler", (_, _) =>
+        {
+            if (_pcChannel.SelectedItem is not AsrockChannel ch || !ch.Addressable) return;
+            _c.SetPcLedCount(ch.ZoneType, (int)_pcLeds.Value);
+        }, 160));
+        pc.Controls.Add(lr);
+        _pcStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3) };
+        pc.Controls.Add(_pcStatus);
+        pc.Controls.Add(new Label
+        {
+            AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
+            Text = "Izlazi kontrolera crtaju se kao trake ispod tipkovnice, pa efekti prelaze i na ventilatore i LED trake. " +
+                   "Broj LED-ica mijenjaj samo za ARGB izlaze: upisuje se u kontroler na ploči i vrijedi i za ASRockov program. " +
+                   "Pri izlazu iz programa ploča se vraća na svoje prijašnje osvjetljenje. ASRock Polychrome Sync mora biti zatvoren."
+        });
+        flow.Controls.Add(Ui.Group("Računalo (ASRock RGB)", pc));
+
         page.Controls.Add(flow);
         return page;
     }
@@ -869,6 +944,11 @@ public sealed class MainForm : Form
             _mouseFollow.Checked = _c.Settings.MouseFollow;
             _mouseSolid.Checked = !_c.Settings.MouseFollow;
             Ui.PaintSwatch(_mouseColorBtn, ColorUtil.Parse(_c.Settings.MouseColor));
+            _pcEnable.Checked = _c.Settings.PcEnabled;
+            _pcFollow.Checked = _c.Settings.PcFollow;
+            _pcSolid.Checked = !_c.Settings.PcFollow;
+            _pcSwap.Checked = _c.Settings.PcSwapRG;
+            Ui.PaintSwatch(_pcColorBtn, ColorUtil.Parse(_c.Settings.PcColor));
             _layoutCombo.SelectedIndex = _c.IsIso ? 0 : 1;
             _fps.Value = Math.Clamp(_c.Settings.Fps, 5, 60);
         }
@@ -946,9 +1026,23 @@ public sealed class MainForm : Form
         _stDevice.ForeColor = kb.IsConnected ? Theme.Good : Color.FromArgb(255, 138, 155);
 
         _mouseStatus.Text = !_c.Settings.MouseEnabled ? "Isključeno." : _c.Mouse.Status;
+        _pcStatus.Text = !_c.Settings.PcEnabled ? "Isključeno." : _c.Pc.Status;
+        RefreshPcChannels();
 
         string fg = _c.ForegroundApp ?? "?";
         _effLabel.Text = $"Sada aktivan: {_c.EffectiveProfile?.Name}   (zadnja aplikacija u fokusu: {fg})";
+    }
+
+    private void RefreshPcChannels()
+    {
+        var chans = _c.Pc.IsConnected ? _c.Pc.Channels.Where(c => c.Addressable).ToList() : new List<AsrockChannel>();
+        string key = string.Join("|", chans.Select(c => c.ToString()));
+        if ((string)_pcChannel.Tag == key) return;
+        int sel = _pcChannel.SelectedIndex;
+        _pcChannel.Tag = key;
+        _pcChannel.Items.Clear();
+        foreach (var ch in chans) _pcChannel.Items.Add(ch);
+        if (chans.Count > 0) _pcChannel.SelectedIndex = Math.Clamp(sel, 0, chans.Count - 1);
     }
 
     /// <summary>Pomiče ispitivač na sljedeću zonu koju ne koristi nijedna druga tipka.</summary>

@@ -21,6 +21,10 @@ public sealed class AppController : IDisposable
     public G815Keyboard Keyboard { get; } = new();
     public LogitechMouse Mouse { get; } = new();
     private bool _mouseConnecting;
+    public AsrockPolychrome Pc { get; } = new();
+    private bool _pcConnecting;
+    private int _pcTicks;
+    private string _pcLayoutKey = "";
     private int _mouseZonesInLayout = -1;
     public LightingEngine Engine { get; }
     public KeyboardHook Hook { get; } = new();
@@ -47,7 +51,9 @@ public sealed class AppController : IDisposable
     {
         _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         Settings = SettingsStore.Load();
-        Engine = new LightingEngine(Keyboard) { Fps = Settings.Fps, Mouse = Mouse };
+        Engine = new LightingEngine(Keyboard) { Fps = Settings.Fps, Mouse = Mouse, Pc = Pc };
+        Pc.SwapRG = Settings.PcSwapRG;
+        Pc.Changed += () => _ui.Post(_ => OnPcChanged(), null);
         Mouse.HostMode = Settings.MouseHostMode;
         Mouse.Changed += () => _ui.Post(_ => OnMouseChanged(), null);
         Recorder = new MacroRecorder(Hook);
@@ -72,7 +78,7 @@ public sealed class AppController : IDisposable
         Engine.Start();
 
         _connectTimer = new System.Windows.Forms.Timer { Interval = 3000 };
-        _connectTimer.Tick += (_, _) => { TryConnect(); TryConnectMouse(); };
+        _connectTimer.Tick += (_, _) => { TryConnect(); TryConnectMouse(); TryConnectPc(); };
         _connectTimer.Start();
 
         _watchTimer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -84,6 +90,7 @@ public sealed class AppController : IDisposable
 
         TryConnect();
         TryConnectMouse();
+        TryConnectPc();
     }
 
     // ------------------------------------------------------------ spajanje
@@ -141,7 +148,9 @@ public sealed class AppController : IDisposable
     {
         int mz = MouseZonesForLayout();
         _mouseZonesInLayout = mz;
-        Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides, mz);
+        var pc = PcChannelsForLayout();
+        _pcLayoutKey = PcLayoutKey(pc);
+        Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides, mz, pc);
         Engine.SetKeys(Keys);
         StateChanged?.Invoke();
     }
@@ -393,6 +402,63 @@ public sealed class AppController : IDisposable
         StateChanged?.Invoke();
     }
 
+    // ------------------------------------------------------------ računalo (ASRock RGB)
+
+    /// <summary>Samo za snimke zaslona: nacrtaj izlaze računala i kad kontroler nije spojen.</summary>
+    public List<(string Name, int Segments)> PreviewPcChannels { get; set; }
+
+    private List<(string Name, int Segments)> PcChannelsForLayout() =>
+        Settings.PcEnabled && Pc.IsConnected
+            ? Pc.Channels.Where(c => c.Segments > 0).Select(c => (c.Name, c.Segments)).ToList()
+            : PreviewPcChannels;
+
+    private static string PcLayoutKey(List<(string Name, int Segments)> pc) =>
+        pc == null ? "" : string.Join("|", pc.Select(c => c.Name + ":" + c.Segments));
+
+    public void TryConnectPc()
+    {
+        if (!Settings.PcEnabled || Pc.IsConnected || _pcConnecting || _disposed) return;
+        if (_pcTicks++ % 5 != 0) return;        // svakih ~15 s
+        _pcConnecting = true;
+        Task.Run(() => Pc.TryConnect()).ContinueWith(_ => _ui.Post(__ => { _pcConnecting = false; StateChanged?.Invoke(); }, null));
+    }
+
+    /// <summary>Pozvati nakon promjene postavki računala.</summary>
+    public void PcSettingsChanged()
+    {
+        Pc.SwapRG = Settings.PcSwapRG;
+        if (!Settings.PcEnabled) Task.Run(() => Pc.Release());
+        else
+        {
+            _pcTicks = 0;
+            TryConnectPc();
+        }
+        ApplyPcMode();
+        SaveSoon();
+        StateChanged?.Invoke();
+    }
+
+    public void SetPcLedCount(byte zoneType, int count) => Task.Run(() => Pc.SetLedCount(zoneType, count));
+
+    private void ApplyPcMode()
+    {
+        Engine.PcFollow = Settings.PcFollow;
+        if (Settings.PcEnabled && !Settings.PcFollow && Pc.IsConnected)
+        {
+            var c = Engine.LightsOff ? Color.Black : ColorUtil.Parse(Settings.PcColor);
+            Pc.SetSegmentColors(Enumerable.Repeat(c, Math.Max(1, Pc.TotalSegments)).ToArray());
+        }
+    }
+
+    private void OnPcChanged()
+    {
+        if (_disposed) return;
+        if (PcLayoutKey(PcChannelsForLayout()) != _pcLayoutKey) RebuildKeys();
+        ApplyPcMode();
+        if (Pc.IsConnected) Notify?.Invoke("Računalo spojeno: " + Pc.Name);
+        StateChanged?.Invoke();
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -406,6 +472,7 @@ public sealed class AppController : IDisposable
         Engine.Dispose();
         Keyboard.Release();
         Mouse.Release();
+        Pc.Release();
         SettingsStore.Save(Settings);
     }
 }

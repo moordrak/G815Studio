@@ -523,14 +523,24 @@ public sealed class LightingEngine : IDisposable
     private readonly bool[] _mouseZone = new bool[256];
     private int[] _mouseZones = Array.Empty<int>();
 
+    /// <summary>ASRock RGB kontroler (null = nema). Njegove zone (0xE0–0xEF) se ne šalju tipkovnici.</summary>
+    public AsrockPolychrome Pc { get; set; }
+    public volatile bool PcFollow = true;
+    private int[] _pcZones = Array.Empty<int>();
+    /// <summary>Zone od ove naviše su virtualne (računalo, miš) i nikad ne idu tipkovnici.</summary>
+    public const int FirstVirtualZone = KeyLayouts.PcZoneBase;
+
     public void SetKeys(IEnumerable<KeyDef> defs)
     {
         var mz = defs.Where(k => k.Shape == "mouse").Select(k => (int)k.Zone).ToArray();
+        var pz = defs.Where(k => k.Shape == "pc").Select(k => (int)k.Zone).ToArray();
         lock (_lock)
         {
             Array.Clear(_mouseZone);
             foreach (int z in mz) _mouseZone[z] = true;
+            foreach (int z in pz) _mouseZone[z] = true;
             _mouseZones = mz;
+            _pcZones = pz;
         }
         var list = defs.ToList();
         float minX = list.Min(k => k.CenterX), minY = list.Min(k => k.CenterY);
@@ -605,7 +615,7 @@ public sealed class LightingEngine : IDisposable
             try
             {
                 int test = TestZone;
-                if (test >= 0 && test < 0xF0)
+                if (test >= 0 && test < FirstVirtualZone)
                 {
                     _frame[test] = Color.White;
                     _everUsed[test] = true;
@@ -625,6 +635,7 @@ public sealed class LightingEngine : IDisposable
             if (_kb.TakeResendRequest()) ForceResend();
             if (_kb.IsConnected) Send(keys);
             PushMouse();
+            PushPc();
             UpdateStats();
 
             int fps = Math.Clamp(Fps, 5, 60);
@@ -646,11 +657,23 @@ public sealed class LightingEngine : IDisposable
         m.SetColors(cols);
     }
 
+    private void PushPc()
+    {
+        var pc = Pc;
+        if (pc == null || !PcFollow || !pc.IsConnected) return;
+        int[] zones;
+        lock (_lock) zones = _pcZones;
+        if (zones.Length == 0) return;
+        var cols = new Color[zones.Length];
+        for (int i = 0; i < zones.Length; i++) cols[i] = _frame[zones[i]];
+        pc.SetSegmentColors(cols);
+    }
+
     private void Send(LightKey[] keys)
     {
-        // zone 0xF0+ su virtualne zone miša i nikad ne idu tipkovnici
-        foreach (var k in keys) if (!_mouseZone[k.Zone] && k.Zone < 0xF0) _everUsed[k.Zone] = true;
-        for (int z = 0xF0; z < 256; z++) _everUsed[z] = false;
+        // zone 0xE0+ su virtualne zone računala i miša i nikad ne idu tipkovnici
+        foreach (var k in keys) if (!_mouseZone[k.Zone] && k.Zone < FirstVirtualZone) _everUsed[k.Zone] = true;
+        for (int z = FirstVirtualZone; z < 256; z++) _everUsed[z] = false;
 
         var changes = new List<(byte Zone, Color Color)>();
         lock (_sentValid)
@@ -670,7 +693,7 @@ public sealed class LightingEngine : IDisposable
         {
             // punilo za male pakete: druge tipke s bojom iz ovog okvira (one se ionako ne mijenjaju)
             var current = new List<(byte Zone, Color Color)>();
-            for (int z = 1; z < 0xF0; z++)
+            for (int z = 1; z < FirstVirtualZone; z++)
                 if (_everUsed[z]) current.Add(((byte)z, Color.FromArgb(255, _frame[z].R, _frame[z].G, _frame[z].B)));
             _kb.SendColors(changes, current);
             _framesThisSecond++;

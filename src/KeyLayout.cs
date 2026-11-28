@@ -41,7 +41,12 @@ public static class KeyLayouts
         return ((float)(cx + Math.Cos(a) * 1.3), (float)(cy + Math.Sin(a) * 0.95));
     }
 
-    public static List<KeyDef> Build(bool iso, IDictionary<string, int> overrides, int mouseZones = 0)
+    // Računalo (ASRock RGB): trake ispod tipkovnice, jedna po izlazu; virtualne zone 0xE0–0xEF
+    public const byte PcZoneBase = 0xE0;
+    public const float PcY = 9.3f, PcRowH = 0.85f, PcX = 1.5f, PcW = 22.5f;
+
+    public static List<KeyDef> Build(bool iso, IDictionary<string, int> overrides, int mouseZones = 0,
+                                     IReadOnlyList<(string Name, int Segments)> pcChannels = null)
     {
         var keys = new List<KeyDef>();
         const float ox = 1.5f, oy = 1.5f;   // oy: gornja traka s okruglim tipkama, kotačićem i logom
@@ -196,6 +201,28 @@ public static class KeyLayouts
                 X = cx - MouseLedSize / 2, Y = cy - MouseLedSize / 2, W = MouseLedSize, H = MouseLedSize,
                 Group = "mouse", Shape = "mouse"
             });
+        }
+
+        // Izlazi ASRock kontrolera: svaki izlaz je red, zone su ravnomjerno raspoređene po njegovoj širini
+        if (pcChannels != null)
+        {
+            int zi = 0, row = 0;
+            foreach (var (name, segs) in pcChannels)
+            {
+                if (segs <= 0) continue;
+                float y = PcY + row * PcRowH;
+                for (int i = 0; i < segs && zi < 16; i++, zi++)
+                {
+                    byte z = (byte)(PcZoneBase + zi);
+                    float cx = segs == 1 ? PcX + PcW / 2 : PcX + 0.6f + i * (PcW - 1.2f) / (segs - 1);
+                    keys.Add(new KeyDef
+                    {
+                        Id = "PC" + zi, Label = segs == 1 ? name : $"{name} · {i + 1}", DefaultZone = z, Zone = z,
+                        X = cx - 0.3f, Y = y + 0.1f, W = 0.6f, H = 0.5f, Group = "pc", Shape = "pc"
+                    });
+                }
+                row++;
+            }
         }
 
         if (overrides != null)
