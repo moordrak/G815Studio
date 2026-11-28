@@ -157,7 +157,7 @@ public sealed class AppController : IDisposable
         _pcLayoutKey = PcLayoutKey(pc);
         int ram = Settings.RamEnabled && Ram.IsConnected ? Ram.StickCount : PreviewRamSticks;
         _ramInLayout = ram;
-        Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides, mz, pc, ram);
+        Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides, mz, pc, ram, Settings.Placements);
         Engine.SetKeys(Keys);
         StateChanged?.Invoke();
     }
@@ -412,15 +412,48 @@ public sealed class AppController : IDisposable
     // ------------------------------------------------------------ računalo (ASRock RGB)
 
     /// <summary>Samo za snimke zaslona: nacrtaj izlaze računala i kad kontroler nije spojen.</summary>
-    public List<(string Name, int Segments)> PreviewPcChannels { get; set; }
+    public List<PcChannelLayout> PreviewPcChannels { get; set; }
 
-    private List<(string Name, int Segments)> PcChannelsForLayout() =>
+    private List<PcChannelLayout> PcChannelsForLayout() =>
         Settings.PcEnabled && Pc.IsConnected
-            ? Pc.Channels.Where(c => c.Segments > 0).Select(c => (c.Name, c.Segments)).ToList()
+            ? Pc.Channels.Where(c => c.Segments > 0).Select(c => new PcChannelLayout(PcDeviceId(c.ZoneType), c.Name, c.Segments)).ToList()
             : PreviewPcChannels;
 
-    private static string PcLayoutKey(List<(string Name, int Segments)> pc) =>
-        pc == null ? "" : string.Join("|", pc.Select(c => c.Name + ":" + c.Segments));
+    public static string PcDeviceId(byte zoneType) => "pc:" + zoneType;
+
+    private static string PcLayoutKey(List<PcChannelLayout> pc) =>
+        pc == null ? "" : string.Join("|", pc.Select(c => c.Id + ":" + c.Leds));
+
+    // ------------------------------------------------------------ raspored uređaja na slici
+
+    public DevicePlacement GetPlacement(string device)
+    {
+        if (!Settings.Placements.TryGetValue(device, out var p) || p == null)
+            Settings.Placements[device] = p = new DevicePlacement();
+        return p;
+    }
+
+    /// <summary>Uređaj je premješten na slici (gornji lijevi kut, u jedinicama tipki).</summary>
+    public void MoveDevice(string device, float x, float y)
+    {
+        var p = GetPlacement(device);
+        p.X = (float)Math.Round(x, 2);
+        p.Y = (float)Math.Round(y, 2);
+        PlacementChanged();
+    }
+
+    /// <summary>Pozvati nakon promjene oblika, smjera ili veličine uređaja.</summary>
+    public void PlacementChanged()
+    {
+        SaveSoon();
+        RebuildKeys();
+    }
+
+    public void ResetPlacements()
+    {
+        Settings.Placements.Clear();
+        PlacementChanged();
+    }
 
     public void TryConnectPc()
     {

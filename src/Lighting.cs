@@ -116,6 +116,7 @@ public sealed class EffectRenderer : IDisposable
                     {
                         1 => 1 - key.NX,
                         2 => key.NY * 0.35,
+                        4 => (1 - key.NY) * 0.35,
                         3 => Math.Sqrt(Math.Pow(key.NX - 0.5, 2) + Math.Pow((key.NY - 0.5) * 0.35, 2)),
                         _ => key.NX
                     };
@@ -254,7 +255,7 @@ public sealed class EffectRenderer : IDisposable
             case EffectType.GradientWave:
                 foreach (var key in keys)
                 {
-                    double pos = ep.Direction switch { 1 => 1 - key.NX, 2 => key.NY, 3 => Math.Abs(key.NX - 0.5) * 2, _ => key.NX };
+                    double pos = ep.Direction switch { 1 => 1 - key.NX, 2 => key.NY, 4 => 1 - key.NY, 3 => Math.Abs(key.NX - 0.5) * 2, _ => key.NX };
                     double k = 0.5 + 0.5 * Math.Sin(2 * Math.PI * (pos - t * 0.25 * speed));
                     frame[key.Zone] = ColorUtil.Lerp(c1, c2, k);
                 }
@@ -338,12 +339,13 @@ public sealed class EffectRenderer : IDisposable
 
             case EffectType.Visor:
             {
-                // skener: svjetlosna traka putuje lijevo-desno i ostavlja trag
+                // skener: svjetlosna traka putuje lijevo-desno (ili gore-dolje) i ostavlja trag
                 double p = 0.5 - 0.5 * Math.Cos(t * 1.4 * speed);
                 double dir = Math.Sin(t * 1.4 * speed);
                 foreach (var key in keys)
                 {
-                    double d = key.NX - p;
+                    double q = ep.Direction switch { 1 => 1 - key.NX, 2 => key.NY, 4 => 1 - key.NY, 3 => Math.Abs(key.NX - 0.5) * 2, _ => key.NX };
+                    double d = q - p;
                     double k = Math.Abs(d) < 0.04 ? 1 : (Math.Sign(d) == -Math.Sign(dir) ? Math.Max(0, 1 - (Math.Abs(d) - 0.04) / 0.25) : Math.Max(0, 1 - (Math.Abs(d) - 0.04) / 0.05));
                     frame[key.Zone] = k >= 0.999 ? c1 : ColorUtil.Lerp(bg, c2, Math.Round(k * 10) / 10);
                 }

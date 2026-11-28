@@ -31,6 +31,25 @@ public sealed class KeyboardView : Control
     public bool Recording { get; set; }
     public event EventHandler SelectionChanged;
     public event Action<int> BankClicked;
+    /// <summary>Uređaj je premješten mišem: id uređaja i novi gornji lijevi kut (jedinice tipki).</summary>
+    public event Action<string, float, float> DeviceMoved;
+    /// <summary>Kliknut je uređaj u načinu uređivanja rasporeda.</summary>
+    public event Action<string> DeviceClicked;
+
+    // uređivanje rasporeda: uređaji (miš, memorija, izlazi računala) pomiču se povlačenjem
+    private bool _arrange;
+    private string _moveDev;
+    private Point _moveStart;
+    private bool _moved;
+    private Geo _frozenGeo;
+    private readonly Dictionary<KeyDef, (float X, float Y, float DX, float DY)> _moveOrig = new();
+    public string HighlightDevice { get; set; }
+
+    public bool ArrangeMode
+    {
+        get => _arrange;
+        set { _arrange = value; _moveDev = null; _frozenGeo = null; Invalidate(); }
+    }
 
     private static readonly Color Muted = Color.FromArgb(91, 97, 112);
 
@@ -40,9 +59,12 @@ public sealed class KeyboardView : Control
     {
         public float S, F, Bx, By, Bw, Bh, PadX;
         public bool HasMouse;
+        public float MouseOX = KeyLayouts.MouseX, MouseOY = KeyLayouts.MouseY;
         public RectangleF Rect(KeyDef k) => new(Bx + PadX + k.X * S + 2 * F, By + k.Y * S + 2 * F, k.W * S - 4 * F, k.H * S - 4 * F);
         public PointF Pt(float ux, float uy) => new(Bx + PadX + ux * S, By + uy * S);
-        public RectangleF MouseBody => new(Bx + PadX + KeyLayouts.MouseX * S, By + KeyLayouts.MouseY * S, KeyLayouts.MouseW * S, KeyLayouts.MouseH * S);
+        public RectangleF MouseBody => new(Bx + PadX + MouseOX * S, By + MouseOY * S, KeyLayouts.MouseW * S, KeyLayouts.MouseH * S);
+        /// <summary>Okvir uređaja na zaslonu.</summary>
+        public RectangleF Dev(KeyDef k) { var a = Pt(k.DevX, k.DevY); return new RectangleF(a.X, a.Y, k.DevW * S, k.DevH * S); }
         public RectangleF Led(KeyDef k)
         {
             var c = Pt(k.CenterX, k.CenterY);
@@ -112,32 +134,37 @@ public sealed class KeyboardView : Control
     /// <summary>Moduli memorije: po modulu zone odozdo prema gore.</summary>
     private List<List<KeyDef>> RamSticks => _keys.Where(k => k.Shape == "ram").GroupBy(k => k.X).OrderBy(g => g.Key).Select(g => g.OrderByDescending(k => k.Y).ToList()).ToList();
     private IEnumerable<KeyDef> MouseLeds => _keys.Where(k => k.Shape == "mouse");
-    /// <summary>Zone računala (ASRock), po redovima: jedan red = jedan izlaz kontrolera.</summary>
-    private List<List<KeyDef>> PcRows => _keys.Where(k => k.Shape == "pc").GroupBy(k => k.Y).OrderBy(g => g.Key).Select(g => g.OrderBy(k => k.X).ToList()).ToList();
+    /// <summary>Izlazi računala (ASRock): po uređaju, LED-ice redom kojim ih kontroler prima.</summary>
+    private List<List<KeyDef>> PcDevices => _keys.Where(k => k.Shape == "pc").GroupBy(k => k.Device).Select(g => g.ToList()).ToList();
+    /// <summary>Svi uređaji izvan tipkovnice, po jedna tipka (nosi okvir uređaja).</summary>
+    private List<KeyDef> Devices => _keys.Where(k => k.Device != null).GroupBy(k => k.Device).Select(g => g.First()).ToList();
 
     private Geo ComputeGeo()
     {
+        if (_frozenGeo != null) return _frozenGeo;
         var real = RealKeys.ToList();
         if (real.Count == 0) return null;
         float maxX = real.Max(k => k.X + k.W);
         float maxY = real.Max(k => k.Y + k.H);
         float wu = maxX + 2 * PadUnits, hu = maxY + BottomUnits;
-        // s mišem desno od tipkovnice ukupna širina ide do desnog ruba miša (uz mali razmak)
-        bool mouse = _keys.Any(k => k.Shape == "mouse");
-        float tw = mouse ? Math.Max(wu, PadUnits + KeyLayouts.MouseX + KeyLayouts.MouseW + 0.3f) : wu;
-        float th = mouse ? Math.Max(hu, KeyLayouts.MouseY + KeyLayouts.MouseH + 0.3f) : hu;
-        var pcKeys = _keys.Where(k => k.Shape == "pc").ToList();
-        if (pcKeys.Count > 0) th = Math.Max(th, pcKeys.Max(k => k.Y + k.H) + 0.35f);
-        var ramKeys = _keys.Where(k => k.Shape == "ram").ToList();
-        if (ramKeys.Count > 0)
+        // okvir svega na slici (jedinice tipki, 0 = lijevi rub prve tipke): tipkovnica i svi uređaji gdje god stajali
+        float x0 = -PadUnits, y0 = 0, x1 = wu - PadUnits, y1 = hu;
+        foreach (var d in Devices)
         {
-            th = Math.Max(th, ramKeys.Max(k => k.Y + k.H) + 0.35f);
-            tw = Math.Max(tw, PadUnits + ramKeys.Max(k => k.X + k.W) + 0.3f);
+            x0 = Math.Min(x0, d.DevX - 0.3f);
+            y0 = Math.Min(y0, d.DevY - (d.Shape == "pc" ? 0.5f : 0.3f));
+            x1 = Math.Max(x1, d.DevX + d.DevW + 0.3f);
+            y1 = Math.Max(y1, d.DevY + d.DevH + (d.Shape == "ram" ? 0.6f : 0.3f));
         }
+        float tw = x1 - x0, th = y1 - y0;
         float s = Math.Max(8, Math.Min((Width - 24) / tw, (Height - 24) / th));
-        var g = new Geo { S = s, F = s / RefU, PadX = PadUnits * s, Bw = wu * s, Bh = hu * s, HasMouse = mouse };
-        g.Bx = (Width - tw * s) / 2;
-        g.By = (Height - g.Bh) / 2;
+        var mouseKey = _keys.FirstOrDefault(k => k.Shape == "mouse");
+        var g = new Geo { S = s, F = s / RefU, PadX = PadUnits * s, Bw = wu * s, Bh = hu * s, HasMouse = mouseKey != null };
+        if (mouseKey != null) { g.MouseOX = mouseKey.DevX; g.MouseOY = mouseKey.DevY; }
+        float ox = (Width - tw * s) / 2 - x0 * s;      // zaslonski x jedinice 0
+        float oy = (Height - th * s) / 2 - y0 * s;
+        g.Bx = ox - g.PadX;
+        g.By = oy;
         return g;
     }
 
@@ -161,8 +188,8 @@ public sealed class KeyboardView : Control
             if (rect.Contains(p)) return key;
         foreach (var m in MouseLeds)
             if (RectangleF.Inflate(g.Led(m), 4 * g.F, 4 * g.F).Contains(p)) return m;
-        foreach (var row in PcRows)
-            foreach (var k in row)
+        foreach (var dev in PcDevices)
+            foreach (var k in dev)
                 if (RectangleF.Inflate(g.Rect(k), 3 * g.F, 3 * g.F).Contains(p)) return k;
         foreach (var stick in RamSticks)
             foreach (var k in stick)
@@ -419,100 +446,170 @@ public sealed class KeyboardView : Control
 
     // ------------------------------------------------------------------ računalo (ASRock ARGB/RGB izlazi)
 
-    private static RectangleF PcStripRect(Geo g, List<KeyDef> row)
-    {
-        float y = row[0].Y - 0.1f;
-        var a = g.Pt(KeyLayouts.PcX, y);
-        return new RectangleF(a.X, a.Y, KeyLayouts.PcW * g.S, 0.7f * g.S);
-    }
+    private static string ShortName(string n) =>
+        (n ?? "").Replace("header ", "").Replace(" / audio", "");
 
-    private static string PcRowName(KeyDef k)
+    private static RectangleF RingBand(Geo g, KeyDef k, out PointF center, out float radius)
     {
-        string n = k.Label;
-        int i = n.IndexOf(" · ", StringComparison.Ordinal);
-        if (i >= 0) n = n[..i];
-        return n.Replace("header ", "").Replace(" / audio", "");
+        var r = g.Dev(k);
+        center = new PointF(r.X + r.Width / 2, r.Y + r.Height / 2);
+        radius = (k.DevW / 2 - 0.3f) * g.S;
+        return new RectangleF(center.X - radius, center.Y - radius, radius * 2, radius * 2);
     }
 
     private void DrawPcStrips(Graphics gr, Geo g)
     {
         float f = g.F;
         using var font = new Font("Segoe UI Semibold", Math.Max(6f, 9f * f), FontStyle.Regular, GraphicsUnit.Pixel);
-        using var sf = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap };
+        using var sfNear = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Far, FormatFlags = StringFormatFlags.NoWrap };
+        using var sfCenter = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Far, FormatFlags = StringFormatFlags.NoWrap };
         using var textBrush = new SolidBrush(Muted);
-        foreach (var row in PcRows)
+        foreach (var dev in PcDevices)
         {
-            var r = PcStripRect(g, row);
-            using (var sh = Rounded(new RectangleF(r.X + 3 * f, r.Y + 5 * f, r.Width, r.Height), r.Height / 2))
-            using (var sb = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
-                gr.FillPath(sb, sh);
-            using (var body = Rounded(r, r.Height / 2))
+            var k0 = dev[0];
+            var r = g.Dev(k0);
+            bool ring = k0.DevShape == "ring";
+            using (var sh = new GraphicsPath())
             {
+                if (ring) sh.AddEllipse(r.X + 3 * f, r.Y + 5 * f, r.Width, r.Height);
+                else sh.AddPath(Rounded(new RectangleF(r.X + 3 * f, r.Y + 5 * f, r.Width, r.Height), Math.Min(r.Width, r.Height) / 2), false);
+                using var sb = new SolidBrush(Color.FromArgb(110, 0, 0, 0));
+                gr.FillPath(sb, sh);
+            }
+            using (var body = new GraphicsPath())
+            {
+                if (ring) body.AddEllipse(r);
+                else body.AddPath(Rounded(r, Math.Min(r.Width, r.Height) / 2), false);
                 using (var lg = new LinearGradientBrush(r, C("#24262b"), C("#0b0c0e"), 90f)) gr.FillPath(lg, body);
                 using var hi = new Pen(Color.FromArgb(28, 255, 255, 255), Math.Max(1, f));
                 gr.DrawPath(hi, body);
             }
-            var label = new RectangleF(g.Bx, r.Y, r.X - g.Bx - 8 * f, r.Height);
-            gr.DrawString(PcRowName(row[0]), font, textBrush, label, sf);
+            if (ring)
+            {
+                // ventilator: tamna unutrašnjost s glavčinom i lopaticama
+                float inner = (k0.DevW / 2 - 0.6f) * g.S;
+                var c = new PointF(r.X + r.Width / 2, r.Y + r.Height / 2);
+                if (inner > 2)
+                {
+                    using (var ib = new SolidBrush(C("#08090b"))) gr.FillEllipse(ib, c.X - inner, c.Y - inner, inner * 2, inner * 2);
+                    using var blade = new Pen(Color.FromArgb(40, 255, 255, 255), Math.Max(1, 1.5f * f));
+                    for (int i = 0; i < 7; i++)
+                    {
+                        double a = i * 2 * Math.PI / 7;
+                        float hub = inner * 0.32f;
+                        gr.DrawBezier(blade,
+                            new PointF(c.X + (float)Math.Cos(a) * hub, c.Y + (float)Math.Sin(a) * hub),
+                            new PointF(c.X + (float)Math.Cos(a + 0.5) * inner * 0.55f, c.Y + (float)Math.Sin(a + 0.5) * inner * 0.55f),
+                            new PointF(c.X + (float)Math.Cos(a + 0.8) * inner * 0.8f, c.Y + (float)Math.Sin(a + 0.8) * inner * 0.8f),
+                            new PointF(c.X + (float)Math.Cos(a + 1.0) * inner * 0.95f, c.Y + (float)Math.Sin(a + 1.0) * inner * 0.95f));
+                    }
+                    float hr = inner * 0.32f;
+                    using var hb = new SolidBrush(C("#1c1e22"));
+                    gr.FillEllipse(hb, c.X - hr, c.Y - hr, hr * 2, hr * 2);
+                }
+            }
+            var label = ring
+                ? new RectangleF(r.X - 40 * f, r.Y - 16 * f, r.Width + 80 * f, 14 * f)
+                : new RectangleF(r.X + 4 * f, r.Y - 16 * f, Math.Max(r.Width, 160 * f), 14 * f);
+            gr.DrawString(ShortName(k0.DeviceName), font, textBrush, label, ring ? sfCenter : sfNear);
         }
     }
 
     private void DrawPcLeds(Graphics gr, Geo g, Pen selPen)
     {
         float f = g.F;
-        foreach (var row in PcRows)
+        foreach (var dev in PcDevices)
         {
-            var strip = PcStripRect(g, row);
-            var inner = RectangleF.Inflate(strip, -5 * f, -5 * f);
-            if (inner.Width < 2 || inner.Height < 2) continue;
-            var cols = row.Select(k => ColorOf?.Invoke(k) ?? Color.Black).ToArray();
-
-            // svjetlo trake: prijelaz između zona, kao što kontroler stvarno šalje LED-icama
-            using (var path = Rounded(inner, inner.Height / 2))
-            using (var lb = new LinearGradientBrush(inner, cols[0], cols[^1], 0f))
+            var k0 = dev[0];
+            var cols = dev.Select(k => ColorOf?.Invoke(k) ?? Color.Black).ToArray();
+            if (k0.DevShape == "ring")
             {
-                if (cols.Length > 1)
-                {
-                    var pos = row.Select(k => Math.Clamp((g.Pt(k.CenterX, 0).X - inner.X) / inner.Width, 0f, 1f)).ToList();
-                    var blendCols = new List<Color> { cols[0] };
-                    var blendPos = new List<float> { 0f };
-                    for (int i = 0; i < cols.Length; i++)
+                var band = RingBand(g, k0, out var c, out float radius);
+                if (radius < 2) continue;
+                float sweep = 360f / dev.Count;
+                using (var pen = new Pen(Color.Black, Math.Max(2, 0.4f * g.S)))
+                    for (int i = 0; i < dev.Count; i++)
                     {
-                        if (pos[i] <= blendPos[^1]) continue;
-                        blendCols.Add(cols[i]);
-                        blendPos.Add(pos[i]);
+                        var p = g.Pt(dev[i].CenterX, dev[i].CenterY);
+                        float ang = (float)(Math.Atan2(p.Y - c.Y, p.X - c.X) * 180 / Math.PI);
+                        pen.Color = IsDark(cols[i]) ? C("#1a1b1f") : cols[i];
+                        gr.DrawArc(pen, band, ang - sweep / 2 - 0.5f, sweep + 1f);
                     }
-                    if (blendPos[^1] < 1f) { blendCols.Add(cols[^1]); blendPos.Add(1f); }
-                    lb.InterpolationColors = new ColorBlend { Colors = blendCols.ToArray(), Positions = blendPos.ToArray() };
-                }
-                else
+            }
+            else
+            {
+                var strip = g.Dev(k0);
+                var inner = RectangleF.Inflate(strip, -5 * f, -5 * f);
+                if (inner.Width < 2 || inner.Height < 2) continue;
+                bool vert = k0.DevVertical;
+                // svjetlo trake: prijelaz između LED-ica, redom kako stoje na traci
+                var order = Enumerable.Range(0, dev.Count)
+                    .Select(i => (Pos: vert ? Math.Clamp((g.Pt(0, dev[i].CenterY).Y - inner.Y) / inner.Height, 0f, 1f)
+                                            : Math.Clamp((g.Pt(dev[i].CenterX, 0).X - inner.X) / inner.Width, 0f, 1f), Col: cols[i]))
+                    .OrderBy(x => x.Pos).ToList();
+                using var path = Rounded(inner, Math.Min(inner.Width, inner.Height) / 2);
+                using var lb = new LinearGradientBrush(inner, order[0].Col, order[^1].Col, vert ? 90f : 0f);
+                var blendCols = new List<Color> { order[0].Col };
+                var blendPos = new List<float> { 0f };
+                foreach (var (pos, col) in order)
                 {
-                    lb.InterpolationColors = new ColorBlend { Colors = new[] { cols[0], cols[0] }, Positions = new[] { 0f, 1f } };
+                    if (pos <= blendPos[^1]) continue;
+                    blendCols.Add(col);
+                    blendPos.Add(pos);
                 }
+                if (blendPos[^1] < 1f) { blendCols.Add(order[^1].Col); blendPos.Add(1f); }
+                lb.InterpolationColors = new ColorBlend { Colors = blendCols.ToArray(), Positions = blendPos.ToArray() };
                 gr.FillPath(lb, path);
             }
-            // sjaj oko trake
-            for (int i = 0; i < row.Count; i++)
+            // sjaj oko LED-ica
+            for (int i = 0; i < dev.Count; i++)
             {
                 if (IsDark(cols[i])) continue;
-                var r = g.Rect(row[i]);
+                var r = g.Rect(dev[i]);
                 for (int j = 3; j >= 1; j--)
                 {
-                    var gl = RectangleF.Inflate(r, j * 6f * f, j * 2.5f * f);
-                    using var gb = new SolidBrush(Color.FromArgb(22 - j * 5, cols[i]));
+                    var gl = RectangleF.Inflate(r, j * 4f * f, j * 4f * f);
+                    using var gb = new SolidBrush(Color.FromArgb(20 - j * 5, cols[i]));
                     gr.FillEllipse(gb, gl);
                 }
             }
-            // oznake zona (mjesta za odabir)
-            for (int i = 0; i < row.Count; i++)
+            // oznake LED-ica (mjesta za odabir)
+            for (int i = 0; i < dev.Count; i++)
             {
-                var r = g.Rect(row[i]);
-                var dot = new RectangleF(r.X + r.Width / 2 - 2.5f * f, r.Y + r.Height / 2 - 2.5f * f, 5 * f, 5 * f);
-                using (var db = new SolidBrush(Color.FromArgb(IsDark(cols[i]) ? 60 : 150, 255, 255, 255))) gr.FillEllipse(db, dot);
-                if (Selected.Contains(row[i].Id))
-                    using (var sp = Rounded(RectangleF.Inflate(r, 2 * f, 2 * f), 5 * f)) gr.DrawPath(selPen, sp);
+                var p = g.Pt(dev[i].CenterX, dev[i].CenterY);
+                float d = Math.Min(5 * f, Math.Max(2, Math.Min(dev[i].W, dev[i].H) * g.S * 0.6f));
+                using (var db = new SolidBrush(Color.FromArgb(IsDark(cols[i]) ? 60 : 150, 255, 255, 255)))
+                    gr.FillEllipse(db, p.X - d / 2, p.Y - d / 2, d, d);
+                if (Selected.Contains(dev[i].Id))
+                    using (var sp = Rounded(RectangleF.Inflate(g.Rect(dev[i]), 2 * f, 2 * f), 4 * f)) gr.DrawPath(selPen, sp);
             }
         }
+    }
+
+    /// <summary>U načinu uređivanja rasporeda: isprekidani okvir oko svakog uređaja koji se može pomaknuti.</summary>
+    private void DrawArrangeFrames(Graphics gr, Geo g)
+    {
+        float f = g.F;
+        foreach (var d in Devices)
+        {
+            var r = RectangleF.Inflate(g.Dev(d), 5 * f, 5 * f);
+            bool hot = d.Device == _moveDev || d.Device == HighlightDevice;
+            using var pen = new Pen(hot ? Color.Gold : Color.FromArgb(150, 120, 180, 255), Math.Max(1, (hot ? 2f : 1.4f) * f)) { DashStyle = DashStyle.Dash };
+            using var path = Rounded(r, 6 * f);
+            gr.DrawPath(pen, path);
+        }
+    }
+
+    private string DeviceAt(Point p)
+    {
+        var g = _geo ?? ComputeGeo();
+        if (g == null) return null;
+        // najmanji okvir pobjeđuje (manji uređaj iznad većeg)
+        return Devices
+            .Where(d => RectangleF.Inflate(g.Dev(d), 6 * g.F, 6 * g.F).Contains(p))
+            .OrderBy(d => d.DevW * d.DevH)
+            .Select(d => d.Device)
+            .FirstOrDefault();
     }
 
     // ------------------------------------------------------------------ memorija (Kingston Fury)
@@ -961,6 +1058,7 @@ public sealed class KeyboardView : Control
         if (g.HasMouse) DrawMouseLeds(gr, g, selPen);
         DrawPcLeds(gr, g, selPen);
         DrawRamLeds(gr, g, selPen);
+        if (_arrange || HighlightDevice != null) DrawArrangeFrames(gr, g);
 
         // 6) svijetleće slovo u gornjem lijevom kutu (zona loga)
         var logo = Find("LOGO");
@@ -1070,6 +1168,20 @@ public sealed class KeyboardView : Control
             BankClicked?.Invoke(bank);
             return;
         }
+        if (_arrange)
+        {
+            _moveDev = DeviceAt(e.Location);
+            if (_moveDev == null) return;
+            _moveStart = e.Location;
+            _moved = false;
+            _frozenGeo = _geo ?? ComputeGeo();
+            _moveOrig.Clear();
+            foreach (var dk in _keys.Where(x => x.Device == _moveDev)) _moveOrig[dk] = (dk.X, dk.Y, dk.DevX, dk.DevY);
+            Capture = true;
+            DeviceClicked?.Invoke(_moveDev);
+            Invalidate();
+            return;
+        }
         bool ctrl = (ModifierKeys & System.Windows.Forms.Keys.Control) != 0;
         var k = HitTest(e.Location);
         if (k == null && _geo != null && _geo.HasMouse)
@@ -1105,6 +1217,26 @@ public sealed class KeyboardView : Control
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        if (_arrange)
+        {
+            if (_moveDev != null && _frozenGeo != null)
+            {
+                float s = _frozenGeo.S;
+                float dx = (float)Math.Round((e.X - _moveStart.X) / s * 20) / 20;
+                float dy = (float)Math.Round((e.Y - _moveStart.Y) / s * 20) / 20;
+                if (dx != 0 || dy != 0) _moved = true;
+                foreach (var (dk, o) in _moveOrig)
+                {
+                    dk.X = o.X + dx;
+                    dk.Y = o.Y + dy;
+                    dk.DevX = o.DX + dx;
+                    dk.DevY = o.DY + dy;
+                }
+                InvalidateStatic();
+            }
+            else Cursor = DeviceAt(e.Location) != null ? Cursors.SizeAll : Cursors.Default;
+            return;
+        }
         Cursor = _mHits.Any(h => h.Rect.Contains(e.Location)) ? Cursors.Hand : Cursors.Default;
         if (!_dragging) return;
         var k = HitTest(e.Location);
@@ -1121,5 +1253,16 @@ public sealed class KeyboardView : Control
     {
         base.OnMouseUp(e);
         _dragging = false;
+        if (_moveDev != null)
+        {
+            string dev = _moveDev;
+            var first = _moveOrig.Keys.FirstOrDefault();
+            _moveDev = null;
+            _frozenGeo = null;
+            _moveOrig.Clear();
+            Capture = false;
+            InvalidateStatic();
+            if (_moved && first != null) DeviceMoved?.Invoke(dev, first.DevX, first.DevY);
+        }
     }
 }

@@ -161,10 +161,22 @@ public sealed class AppSettings
     public bool MouseHostMode;            // miš u host načinu dok program radi
     public bool LightsOffOnExit = true;   // pri izlazu ugasi tipkovnicu, miša i računalo (ništa ne svijetli)
     public bool PcEnabled = true;
-    public bool RamEnabled;               // Kingston Fury memorija (treba PawnIO i administratorska prava)         // ASRock RGB kontroler na matičnoj ploči
+    public bool RamEnabled;               // Kingston Fury memorija (treba PawnIO i administratorska prava)
     public bool PcFollow = true;          // true = prati efekt tipkovnice, false = jedna boja
     public string PcColor = "#00C8FF";
     public bool PcSwapRG;                 // dodatna zamjena crvene i zelene za ventilatore s drugim redoslijedom
+    /// <summary>Raspored uređaja na slici: "mouse", "ram", "pc:&lt;izlaz&gt;" → položaj, oblik i smjer.</summary>
+    public Dictionary<string, DevicePlacement> Placements = new();
+}
+
+/// <summary>Kako je uređaj postavljen na slici (o tome ovisi kako ga efekti zahvaćaju).</summary>
+public sealed class DevicePlacement
+{
+    public float? X, Y;                   // gornji lijevi kut u jedinicama tipki; null = zadani položaj
+    public string Shape = "line";         // "line" = traka, "ring" = krug (ventilator)
+    public bool Vertical;                 // traka okomito
+    public bool Reverse;                  // LED-ice obrnutim redom (drugi smjer)
+    public float Size;                    // duljina trake / promjer kruga u jedinicama tipki; 0 = zadano
 }
 
 public static class SettingsStore
@@ -206,6 +218,8 @@ public static class SettingsStore
     {
         s.Profiles ??= new();
         s.ZoneOverrides ??= new();
+        s.Placements ??= new();
+        foreach (var k in s.Placements.Where(kv => kv.Value == null).Select(kv => kv.Key).ToList()) s.Placements.Remove(k);
         if (s.Profiles.Count == 0) s.Profiles.Add(CreateDefaultProfile());
         foreach (var p in s.Profiles)
         {

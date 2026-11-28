@@ -180,13 +180,14 @@ public sealed class AsrockPolychrome : IDisposable
         return true;
     }
 
-    /// <summary>Virtualne zone u efektima: svaka LED-ica ARGB izlaza ima svoju zonu, RGB izlaz (jedna boja) jednu.</summary>
+    /// <summary>Virtualne zone u efektima: svaka LED-ica ima svoju zonu (i na ploči, npr. 3 LED-ice PCB-a),
+    /// samo 4-pinski RGB headeri imaju jednu boju za cijelu traku.</summary>
     private void AssignSegments()
     {
         int left = KeyLayouts.PcMaxLeds;
         foreach (var c in _channels)
         {
-            int want = c.LedCount <= 0 ? 0 : c.Addressable ? c.LedCount : 1;
+            int want = c.LedCount <= 0 ? 0 : c.ZoneType is 0 or 1 ? 1 : c.LedCount;
             c.Segments = Math.Min(want, left);
             left -= c.Segments;
         }
