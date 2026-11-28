@@ -68,8 +68,15 @@ public static class PawnIoHost
             catch (Exception ex) { return "Raspakiravanje PawnIO-a nije uspjelo: " + ex.Message; }
             if (IsInstalled)
             {
-                Log.Write(InstalledByUs ? "RAM: PawnIO je od prije instalirao G815 Studio (bit će uklonjen pri izlazu)."
-                                        : "RAM: PawnIO je već instaliran u sustavu – program ga neće uklanjati.");
+                string where = "";
+                try
+                {
+                    using var k = Registry.LocalMachine.OpenSubKey(UninstallKey);
+                    where = $" (mapa: {k?.GetValue("InstallLocation")}, verzija: {k?.GetValue("DisplayVersion")})";
+                }
+                catch { }
+                Log.Write(InstalledByUs ? "RAM: PawnIO je od prije instalirao G815 Studio (bit će uklonjen pri izlazu)." + where
+                                        : "RAM: PawnIO je već instaliran u sustavu – program ga neće uklanjati." + where);
                 return null;
             }
             Log.Write("RAM: instaliram PawnIO (privremeno, do izlaza iz programa)…");

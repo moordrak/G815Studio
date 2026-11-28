@@ -28,6 +28,8 @@ public sealed class PawnIoSmbus : IDisposable
     private Mutex _mutex;
 
     public string Description { get; private set; } = "";
+    /// <summary>Win32 greška zadnjeg poziva modula (0 = uspjeh), za dijagnostiku.</summary>
+    public int LastError { get; private set; }
 
     public static IEnumerable<string> ModuleCandidates(string file)
     {
@@ -83,6 +85,7 @@ public sealed class PawnIoSmbus : IDisposable
         Buffer.BlockCopy(input, 0, inBuf, FnNameLength, input.Length * 8);
         var outBuf = new byte[Math.Max(8, output.Length * 8)];
         bool ok = DeviceIoControl(_dev, IoctlExecuteFn, inBuf, inBuf.Length, outBuf, output.Length * 8, out int got, IntPtr.Zero);
+        LastError = ok ? 0 : Marshal.GetLastWin32Error();
         if (ok && output.Length > 0) Buffer.BlockCopy(outBuf, 0, output, 0, Math.Min(got, output.Length * 8));
         return ok;
     }
@@ -147,10 +150,23 @@ public static class RamProbe
 
         var found = new List<string>();
         int spd = 0, rgb = 0;
+        var errors = new Dictionary<int, int>();
         for (int a = 0x50; a <= 0x67; a++)
         {
+            // tri načina čitanja (sve samo čitanje): primanje bajta, bajt s registra 0, riječ s registra 0
             int b = bus.ReadByte((byte)a);
-            if (b < 0) continue;
+            int e1 = bus.LastError;
+            if (b < 0) { b = bus.ReadByteData((byte)a, 0); }
+            int e2 = bus.LastError;
+            if (b < 0) { b = bus.ReadWordData((byte)a, 0); }
+            int e3 = bus.LastError;
+            if (b < 0)
+            {
+                errors[e1] = errors.GetValueOrDefault(e1) + 1;
+                if (a is 0x50 or 0x58 or 0x60)
+                    Log.Write($"RAM: adresa 0x{a:X2} ne odgovara (greške: bajt {e1}, bajt s registra {e2}, riječ {e3})");
+                continue;
+            }
             string kind = a < 0x58 ? "SPD" : a < 0x60 ? "RGB DDR4?" : "RGB DDR5?";
             if (a < 0x58) spd++; else rgb++;
             string regs = "";
@@ -166,6 +182,8 @@ public static class RamProbe
             found.Add($"0x{a:X2}");
             Thread.Sleep(10);
         }
+        if (errors.Count > 0)
+            Log.Write("RAM: greške po broju adresa: " + string.Join(", ", errors.Select(kv => $"{kv.Key} ×{kv.Value}")));
         string summary = $"SMBus {bus.Description}: SPD {spd}, RGB adresa {rgb} ({(found.Count == 0 ? "ništa ne odgovara" : string.Join(", ", found))}).";
         Log.Write("RAM: " + summary);
         return summary;
