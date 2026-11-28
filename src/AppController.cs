@@ -470,9 +470,11 @@ public sealed class AppController : IDisposable
         if (Recorder.IsRecording) Recorder.Stop();
         Hook.Dispose();
         Engine.Dispose();
-        Keyboard.Release();
-        Mouse.Release();
-        Pc.Release();
+        bool dark = Settings.LightsOffOnExit;
+        if (dark) Engine.BlackOut();
+        Keyboard.Release(dark);
+        Mouse.Release(dark);
+        Pc.Release(dark);
         SettingsStore.Save(Settings);
     }
 }

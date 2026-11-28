@@ -434,9 +434,16 @@ public sealed class LogitechMouse : IDisposable
     }
 
     /// <summary>Vraća mišu njegove vlastite efekte.</summary>
-    public void Release()
+    /// <param name="stayDark">true = ugasi LED-ice i ne vraćaj mišu njegove efekte (ostaje ugašen)</param>
+    public void Release(bool stayDark = false)
     {
+        if (stayDark && IsConnected)
+        {
+            SetColors(new[] { Color.Black });
+            Thread.Sleep(250);      // nit za slanje u tom vremenu pošalje crnu svim LED-icama
+        }
         _stop = true;
+        if (_thread != null && _thread != Thread.CurrentThread) _thread.Join(500);
         HidppDevice dev;
         lock (_lock)
         {
@@ -446,8 +453,11 @@ public sealed class LogitechMouse : IDisposable
         }
         if (dev == null) return;
         dev.Disconnected -= OnDisconnected;
-        try { if (_v8071) dev.Request(_feat, 5, new byte[] { 0x01, 0x00, 0x00 }, 300); } catch { }
-        try { if (_onboard != 0) dev.Request(_onboard, 1, new byte[] { 0x01 }, 300); } catch { }
+        if (!stayDark)
+        {
+            try { if (_v8071) dev.Request(_feat, 5, new byte[] { 0x01, 0x00, 0x00 }, 300); } catch { }
+            try { if (_onboard != 0) dev.Request(_onboard, 1, new byte[] { 0x01 }, 300); } catch { }
+        }
         dev.Dispose();
         Changed?.Invoke();
     }

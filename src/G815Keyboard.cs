@@ -356,7 +356,8 @@ public sealed class G815Keyboard : IDisposable
     }
 
     /// <summary>Vraća tipkovnicu u normalan (ugrađeni) način rada.</summary>
-    public void Release()
+    /// <param name="stayDark">true = tipkovnica ostaje u host načinu s ugašenim tipkama (ne vraća ugrađene efekte)</param>
+    public void Release(bool stayDark = false)
     {
         HidppDevice dev;
         lock (_lock)
@@ -368,7 +369,8 @@ public sealed class G815Keyboard : IDisposable
         dev.Disconnected -= OnDeviceDisconnected;
         TryRun(() => { if (_gkeys != 0) dev.Request(_gkeys, 2, new byte[] { 0x00 }, 300); }, "G tipke off");
         TryRun(() => { if (_mr != 0) dev.Request(_mr, 0, new byte[] { 0x00 }, 300); }, "MR off");
-        TryRun(() => { if (_onboard != 0) dev.Request(_onboard, 1, new byte[] { 0x01 }, 300); }, "onboard način");
+        if (!stayDark)
+            TryRun(() => { if (_onboard != 0) dev.Request(_onboard, 1, new byte[] { 0x01 }, 300); }, "onboard način");
         dev.Notification -= OnNotification;
         dev.Dispose();
     }

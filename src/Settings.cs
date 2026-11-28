@@ -159,6 +159,7 @@ public sealed class AppSettings
     public bool MouseFollow = true;       // true = prati efekt tipkovnice, false = jedna boja
     public string MouseColor = "#00C8FF";
     public bool MouseHostMode;            // miš u host načinu dok program radi
+    public bool LightsOffOnExit = true;   // pri izlazu ugasi tipkovnicu, miša i računalo (ništa ne svijetli)
     public bool PcEnabled = true;         // ASRock RGB kontroler na matičnoj ploči
     public bool PcFollow = true;          // true = prati efekt tipkovnice, false = jedna boja
     public string PcColor = "#00C8FF";

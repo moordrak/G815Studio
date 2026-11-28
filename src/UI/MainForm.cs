@@ -47,7 +47,8 @@ public sealed class MainForm : Form
     private Label _effLabel;
 
     // postavke
-    private CheckBox _autostart, _zoneTest;
+    private CheckBox _autostart, _zoneTest, _lightsOffOnExit;
+    private List<KeyDef> _shownKeys;
     private ComboBox _layoutCombo, _zoneKey;
     private NumericUpDown _fps, _zoneNum;
     private Label _devInfo;
@@ -683,6 +684,14 @@ public sealed class MainForm : Form
             catch (Exception ex) { MessageBox.Show(this, ex.Message, "Autostart", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         };
         general.Controls.Add(_autostart);
+        _lightsOffOnExit = new CheckBox { Text = "Pri izlazu ugasi sve LED-ice (tipkovnica, miš, računalo)", AutoSize = true };
+        _lightsOffOnExit.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.LightsOffOnExit = _lightsOffOnExit.Checked;
+            _c.SaveSoon();
+        };
+        general.Controls.Add(_lightsOffOnExit);
 
         var row = Ui.Flow();
         row.Controls.Add(Ui.Lbl("Raspored tipkovnice:"));
@@ -939,6 +948,7 @@ public sealed class MainForm : Form
             _profList.SelectedItem = P.Name;
 
             _autostart.Checked = Autostart.IsEnabled;
+            _lightsOffOnExit.Checked = _c.Settings.LightsOffOnExit;
             _mouseEnable.Checked = _c.Settings.MouseEnabled;
             _mouseHost.Checked = _c.Settings.MouseHostMode;
             _mouseFollow.Checked = _c.Settings.MouseFollow;
@@ -964,6 +974,7 @@ public sealed class MainForm : Form
 
     private void ReloadKeys()
     {
+        _shownKeys = _c.Keys;
         _kbView.SetKeys(_c.Keys);
         object sel = _zoneKey.SelectedItem;
         string selId = (sel as KeyDef)?.Id;
@@ -980,6 +991,8 @@ public sealed class MainForm : Form
             ReloadAll();
         else
             UpdateStatus();
+        // miš ili ASRock su se spojili nakon otvaranja prozora: raspored tipki je nov, pa ga treba ponovno nacrtati
+        if (!ReferenceEquals(_shownKeys, _c.Keys)) ReloadKeys();
         UpdateRecordingUi();
     }
 

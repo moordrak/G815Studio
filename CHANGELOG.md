@@ -2,7 +2,9 @@
 
 ## v1.8.0
 - **Miš na slici:** G502 X PLUS se crta desno od tipkovnice, s lukom od 8 LED-ica. LED-ice se biraju i boje kistom kao tipke, klik na tijelo miša odabire sve, a u brzom odabiru je dodan gumb „Miš“. Efekti prelaze na miša prema stvarnom položaju LED-ica.
-- **RGB osvjetljenje računala (ASRock Polychrome USB):** program pronalazi RGB kontroler na ASRock pločama (npr. B760M Pro RS), prebacuje ga u izravni način i šalje boje svim LED-icama na ARGB i RGB headerima. Izlazi se crtaju kao trake ispod tipkovnice, pa svi efekti prelaze i na ventilatore i LED trake (s glatkim prijelazom između zona). Uključuje se u *Postavke → Računalo (ASRock RGB)*, a moguće je i jedna boja, zamjena crvene i zelene te upis broja LED-ica po ARGB izlazu. Pri izlazu ploča se vraća na prijašnje osvjetljenje. Ako je ploča prije bila u izravnom načinu (npr. nakon OpenRGB-a), vraća se na dugu, da ne ostane ugašena.
+- **RGB osvjetljenje računala (ASRock Polychrome USB):** program pronalazi RGB kontroler na ASRock pločama (npr. B760M Pro RS), prebacuje ga u izravni način i šalje boje svim LED-icama na ARGB i RGB headerima. Izlazi se crtaju kao trake ispod tipkovnice, pa svi efekti prelaze i na ventilatore i LED trake (s glatkim prijelazom između zona). Uključuje se u *Postavke → Računalo (ASRock RGB)*, a moguće je i jedna boja, zamjena crvene i zelene te upis broja LED-ica po ARGB izlazu. Pri izlazu ploča se vraća na prijašnje osvjetljenje.
+- **Pri izlazu se sve gasi:** tipkovnica, miš i ASRock izlazi ostaju ugašeni nakon zatvaranja programa (tipkovnica ne vraća ugrađene efekte). Može se isključiti u *Postavke → Općenito*. Nakon ponovnog pokretanja računala tipkovnica i miš same vraćaju svoje ugrađene efekte dok se program ne pokrene.
+- Miš i ASRock trake pojavljuju se na slici i kad se spoje tek nakon otvaranja prozora (prije se slika nije osvježila).
 - U `log.txt` se zapisuje što je pronađeno na ASRock kontroleru (izlazi, broj LED-ica, sirovi odgovori), za provjeru na stvarnoj ploči.
 
 ## v1.7.1

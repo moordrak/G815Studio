@@ -27,7 +27,7 @@ public sealed class AsrockPolychrome : IDisposable
 
     private const byte CmdSetZone = 0x10, CmdReadZone = 0x11, CmdCommit = 0x12, CmdReadHeader = 0x14, CmdWriteHeader = 0x15;
     private const byte CfgPresent = 0x01, CfgLedCount = 0x02, CfgRgSwap = 0x03;
-    private const byte ModeRainbow = 0x0E, ModeDirect = 0x0F, ChunkFirst = 0xE3, ChunkNext = 0xE4;
+    private const byte ModeOff = 0x00, ModeRainbow = 0x0E, ModeDirect = 0x0F, ChunkFirst = 0xE3, ChunkNext = 0xE4;
     private const byte NotPresent = 0x1E;
     private const int AddressableMax = 100;
     private const int R = 1;            // pomak odgovora zbog report ID-a
@@ -377,8 +377,9 @@ public sealed class AsrockPolychrome : IDisposable
         ThreadPool.QueueUserWorkItem(_ => Changed?.Invoke());
     }
 
-    /// <summary>Vrati kontroleru načine rada i boje kakvi su bili prije programa i zatvori ga.</summary>
-    public void Release()
+    /// <summary>Vrati kontroleru načine rada i boje kakvi su bili prije programa (ili ih ugasi) i zatvori ga.</summary>
+    /// <param name="stayDark">true = svi izlazi u način „isključeno“, pa nakon programa ništa ne svijetli</param>
+    public void Release(bool stayDark = false)
     {
         _stop = true;
         _wake.Set();
@@ -390,7 +391,13 @@ public sealed class AsrockPolychrome : IDisposable
             try
             {
                 Request(CmdWriteHeader, CfgRgSwap, (4, _rgSwapOriginal));
-                foreach (var s in _saved)
+                if (stayDark)
+                {
+                    foreach (var c in _channels)
+                        Request(CmdSetZone, c.ZoneType, (4, ModeOff), (8, 0xE0), (9, 0xFF));
+                    Log.Write("ASRock: svi izlazi ugašeni.");
+                }
+                else foreach (var s in _saved)
                 {
                     // izravni način (0x0F, 0xE2, 0xE3) bez programa znači ugašene LED-ice, pa se tada vraća duga
                     if (s.Mode is ModeDirect or 0xE2 or 0xE3)
@@ -398,7 +405,7 @@ public sealed class AsrockPolychrome : IDisposable
                     else
                         Request(CmdSetZone, s.Zone, (4, s.Mode), (5, s.R), (6, s.G), (7, s.B), (8, s.Speed), (9, 0xFF));
                 }
-                Log.Write("ASRock: vraćeni prijašnji načini rada.");
+                if (!stayDark) Log.Write("ASRock: vraćeni prijašnji načini rada.");
             }
             catch (Exception ex)
             {

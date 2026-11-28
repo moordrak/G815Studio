@@ -755,6 +755,16 @@ public sealed class LightingEngine : IDisposable
         _thread?.Join(1000);
         _renderer.Dispose();
     }
+
+    /// <summary>Nakon zaustavljanja petlje: pošalji crnu svim tipkama koje je program ikad osvijetlio.</summary>
+    public void BlackOut()
+    {
+        LightKey[] keys;
+        lock (_lock) keys = _keys;
+        Array.Clear(_frame);
+        ForceResend();
+        if (_kb.IsConnected && keys != null) Send(keys);
+    }
 }
 
 // ---------------------------------------------------------------- Zvuk (WASAPI peak meter)
