@@ -8,7 +8,7 @@ namespace G815Studio;
 public sealed class LightKey
 {
     public string Id;
-    public byte Zone;
+    public int Zone;
     public float UX, UY;   // središte u jedinicama tipki
     public float NX, NY;   // normalizirano 0..1
 }
@@ -460,11 +460,11 @@ public sealed class LightingEngine : IDisposable
     private readonly EffectRenderer _renderer = new();
     private readonly object _lock = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
-    private readonly Color[] _frame = new Color[256];
+    private readonly Color[] _frame = new Color[KeyLayouts.ZoneCount];
     private readonly Color[] _sent = new Color[256];
     private readonly bool[] _sentValid = new bool[256];
     private readonly bool[] _everUsed = new bool[256];
-    private readonly Color[] _snapshot = new Color[256];
+    private readonly Color[] _snapshot = new Color[KeyLayouts.ZoneCount];
     private Thread _thread;
     private volatile bool _stop;
 
@@ -520,10 +520,10 @@ public sealed class LightingEngine : IDisposable
     /// <summary>Miš koji prati efekt (null = nema). Zone miša se ne šalju tipkovnici.</summary>
     public LogitechMouse Mouse { get; set; }
     public volatile bool MouseFollow = true;
-    private readonly bool[] _mouseZone = new bool[256];
+    private readonly bool[] _mouseZone = new bool[KeyLayouts.ZoneCount];
     private int[] _mouseZones = Array.Empty<int>();
 
-    /// <summary>ASRock RGB kontroler (null = nema). Njegove zone (0xE0–0xEF) se ne šalju tipkovnici.</summary>
+    /// <summary>ASRock RGB kontroler (null = nema). Njegove zone (0x100+, po jedna za svaku LED-icu) se ne šalju tipkovnici.</summary>
     public AsrockPolychrome Pc { get; set; }
     /// <summary>Kingston Fury memorija (null = nema). Njene zone (0xC0–0xCF) se ne šalju tipkovnici.</summary>
     public KingstonFury Ram { get; set; }
@@ -531,7 +531,7 @@ public sealed class LightingEngine : IDisposable
     public volatile bool PcFollow = true;
     private int[] _pcZones = Array.Empty<int>();
     /// <summary>Zone od ove naviše su virtualne (računalo, miš) i nikad ne idu tipkovnici.</summary>
-    public const int FirstVirtualZone = KeyLayouts.PcZoneBase;
+    public const int FirstVirtualZone = 0xE0;
 
     public void SetKeys(IEnumerable<KeyDef> defs)
     {
@@ -636,7 +636,7 @@ public sealed class LightingEngine : IDisposable
                 LastError = ex.Message;
             }
 
-            lock (_snapshot) Array.Copy(_frame, _snapshot, 256);
+            lock (_snapshot) Array.Copy(_frame, _snapshot, _frame.Length);
 
             if (_kb.TakeResendRequest()) ForceResend();
             if (_kb.IsConnected) Send(keys);

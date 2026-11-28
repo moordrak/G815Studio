@@ -180,24 +180,15 @@ public sealed class AsrockPolychrome : IDisposable
         return true;
     }
 
-    /// <summary>Virtualne zone u efektima: svaki RGB izlaz 1, ARGB izlazi dijele ostatak (najviše 8 po izlazu, ukupno 16).</summary>
+    /// <summary>Virtualne zone u efektima: svaka LED-ica ARGB izlaza ima svoju zonu, RGB izlaz (jedna boja) jednu.</summary>
     private void AssignSegments()
     {
-        const int budget = 16;
-        int fixedCount = 0;
-        foreach (var c in _channels.Where(c => !c.Addressable))
+        int left = KeyLayouts.PcMaxLeds;
+        foreach (var c in _channels)
         {
-            c.Segments = c.LedCount > 0 && fixedCount < budget ? 1 : 0;
-            fixedCount += c.Segments;
-        }
-        var argb = _channels.Where(c => c.Addressable && c.LedCount > 0).ToList();
-        foreach (var c in _channels.Where(c => c.Addressable && c.LedCount == 0)) c.Segments = 0;
-        int left = budget - fixedCount;
-        for (int i = 0; i < argb.Count; i++)
-        {
-            int share = argb.Count - i > 0 ? left / (argb.Count - i) : 0;
-            argb[i].Segments = Math.Max(0, Math.Min(Math.Min(8, share), argb[i].LedCount));
-            left -= argb[i].Segments;
+            int want = c.LedCount <= 0 ? 0 : c.Addressable ? c.LedCount : 1;
+            c.Segments = Math.Min(want, left);
+            left -= c.Segments;
         }
     }
 

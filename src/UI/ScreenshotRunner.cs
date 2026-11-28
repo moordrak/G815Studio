@@ -97,7 +97,7 @@ internal sealed class ScreenshotRunner : ApplicationContext
         var s = c.Settings;
         // na snimkama se vidi i miš (G502 X PLUS ima 8 LED-ica), iako na runneru nije spojen
         c.PreviewMouseZones = 8;
-        c.PreviewPcChannels = new() { ("ARGB header 1", 8), ("ARGB header 2", 8) };
+        c.PreviewPcChannels = new() { ("ARGB header 1", 24), ("ARGB header 2", 9), ("ARGB header 3", 18) };
         c.PreviewRamSticks = 4;
         c.RebuildKeys();
         var main = c.ManualProfile;

@@ -11,7 +11,7 @@ public sealed class MainForm : Form
     private ComboBox _profileCombo;
     private ToolStripStatusLabel _stDevice, _stProfile, _stBank, _stInfo;
     private readonly System.Windows.Forms.Timer _uiTimer = new() { Interval = 33 };
-    private readonly Color[] _snapshot = new Color[256];
+    private readonly Color[] _snapshot = new Color[KeyLayouts.ZoneCount];
     private int _tick;
 
     // okvir (bočni izbornik, zaglavlje)
@@ -1023,7 +1023,7 @@ public sealed class MainForm : Form
         object sel = _zoneKey.SelectedItem;
         string selId = (sel as KeyDef)?.Id;
         _zoneKey.Items.Clear();
-        foreach (var k in _c.Keys) _zoneKey.Items.Add(k);
+        foreach (var k in _c.Keys.Where(k => k.Zone < 0x100)) _zoneKey.Items.Add(k);
         if (selId != null) _zoneKey.SelectedItem = _c.Keys.FirstOrDefault(k => k.Id == selId);
         UpdateSelInfo();
     }

@@ -5,8 +5,8 @@ public sealed class KeyDef
     public string Id { get; init; }      // "U04" (HID usage), "G1".."G5", "LOGO"
     public string Label { get; init; }
     public int Usage { get; init; }
-    public byte DefaultZone { get; init; }
-    public byte Zone { get; set; }       // stvarna zona (nakon korisničkih izmjena)
+    public int DefaultZone { get; init; }
+    public int Zone { get; set; }       // stvarna zona (nakon korisničkih izmjena)
     public float X { get; init; }
     public float Y { get; init; }
     public float W { get; init; } = 1;
@@ -41,8 +41,12 @@ public static class KeyLayouts
         return ((float)(cx + Math.Cos(a) * 1.3), (float)(cy + Math.Sin(a) * 0.95));
     }
 
-    // Računalo (ASRock RGB): trake ispod tipkovnice, jedna po izlazu; virtualne zone 0xE0–0xEF
-    public const byte PcZoneBase = 0xE0;
+    // Računalo (ASRock RGB): trake ispod tipkovnice, jedna po izlazu. Svaka stvarna LED-ica ima svoju virtualnu
+    // zonu od 0x100 naviše (izvan raspona tipkovnice), pa efekti teku glatko duž ARGB traka.
+    public const int PcZoneBase = 0x100;
+    public const int PcMaxLeds = 0x200;
+    /// <summary>Ukupan broj zona u okviru efekata (tipkovnica 0–0xFF + LED-ice računala).</summary>
+    public const int ZoneCount = PcZoneBase + PcMaxLeds;
     public const float PcY = 9.3f, PcRowH = 0.85f, PcX = 1.5f, PcW = 22.5f;
 
     // Memorija (Kingston Fury): okomiti moduli ispod miša; virtualne zone 0xC0–0xCF (po modulu RamSegments zona, odozdo)
@@ -198,7 +202,7 @@ public static class KeyLayouts
         int n = Math.Min(mouseZones, 16);
         for (int i = 0; i < n; i++)
         {
-            byte z = (byte)(0xF0 + i);
+            int z = 0xF0 + i;
             var (cx, cy) = MouseLed(i, n);
             keys.Add(new KeyDef
             {
@@ -216,14 +220,16 @@ public static class KeyLayouts
             {
                 if (segs <= 0) continue;
                 float y = PcY + row * PcRowH;
-                for (int i = 0; i < segs && zi < 16; i++, zi++)
+                float step = segs == 1 ? PcW : (PcW - 1.2f) / (segs - 1);
+                float w = Math.Clamp(step * 0.8f, 0.12f, 0.6f);
+                for (int i = 0; i < segs && zi < PcMaxLeds; i++, zi++)
                 {
-                    byte z = (byte)(PcZoneBase + zi);
-                    float cx = segs == 1 ? PcX + PcW / 2 : PcX + 0.6f + i * (PcW - 1.2f) / (segs - 1);
+                    int z = PcZoneBase + zi;
+                    float cx = segs == 1 ? PcX + PcW / 2 : PcX + 0.6f + i * step;
                     keys.Add(new KeyDef
                     {
                         Id = "PC" + zi, Label = segs == 1 ? name : $"{name} · {i + 1}", DefaultZone = z, Zone = z,
-                        X = cx - 0.3f, Y = y + 0.1f, W = 0.6f, H = 0.5f, Group = "pc", Shape = "pc"
+                        X = cx - w / 2, Y = y + 0.1f, W = w, H = 0.5f, Group = "pc", Shape = "pc"
                     });
                 }
                 row++;
@@ -234,7 +240,7 @@ public static class KeyLayouts
         {
             for (int i = 0; i < RamSegments; i++)
             {
-                byte z = (byte)(RamZoneBase + s * RamSegments + i);
+                int z = RamZoneBase + s * RamSegments + i;
                 float segH = RamH / RamSegments;
                 keys.Add(new KeyDef
                 {
@@ -248,8 +254,8 @@ public static class KeyLayouts
         if (overrides != null)
         {
             foreach (var k in keys)
-                if (overrides.TryGetValue(k.Id, out int z) && z >= 0 && z <= 255)
-                    k.Zone = (byte)z;
+                if (k.Shape != "pc" && overrides.TryGetValue(k.Id, out int z) && z >= 0 && z <= 255)
+                    k.Zone = z;
         }
         return keys;
     }
