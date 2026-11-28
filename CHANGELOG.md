@@ -1,5 +1,8 @@
 # Popis promjena
 
+## v1.8.1
+- **Rasvjeta prati monitore:** kad se monitori ugase zbog štednje energije, program ugasi svu rasvjetu (tipkovnicu, miša, računalo i memoriju). Kad se monitori ponovno upale (npr. pomakom miša ili pritiskom tipke), rasvjeta se vraća kakva je bila. Zatamnjeni zasloni ne gase rasvjetu. Uključeno je po zadanom, a isključuje se u *Postavke → Općenito*. Ako je rasvjeta ugašena iz traya (*Ugasi osvjetljenje*), ostaje ugašena i kad se monitori upale.
+
 ## v1.8.0
 - **Miš na slici:** G502 X PLUS se crta desno od tipkovnice, s lukom od 8 LED-ica. LED-ice se biraju i boje kistom kao tipke, klik na tijelo miša odabire sve, a u brzom odabiru je dodan gumb „Miš“. Efekti prelaze na miša prema stvarnom položaju LED-ica.
 - **RGB osvjetljenje računala (ASRock Polychrome USB):** program pronalazi RGB kontroler na ASRock pločama (npr. B760M Pro RS), prebacuje ga u izravni način i šalje boje svim LED-icama na ARGB i RGB headerima. Izlazi se crtaju kao trake ispod tipkovnice, pa svi efekti prelaze i na ventilatore i LED trake (svaka ARGB LED-ica dobiva vlastitu boju iz efekta, pa efekti teku glatko duž ventilatora i traka). Uključuje se u *Postavke → Računalo (ASRock RGB)*, a moguće je i jedna boja, zamjena crvene i zelene te upis broja LED-ica po ARGB izlazu. Pri izlazu ploča se vraća na prijašnje osvjetljenje.

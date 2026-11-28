@@ -30,6 +30,8 @@ public sealed class AppController : IDisposable
     private string _pcLayoutKey = "";
     private int _mouseZonesInLayout = -1;
     public LightingEngine Engine { get; }
+    private readonly DisplayPowerWatcher _display;
+    private bool _userLightsOff;
     public KeyboardHook Hook { get; } = new();
     public MacroPlayer Player { get; } = new();
     public MacroRecorder Recorder { get; }
@@ -80,6 +82,9 @@ public sealed class AppController : IDisposable
         RebuildKeys();
         Apply(ManualProfile);
         Engine.Start();
+
+        _display = new DisplayPowerWatcher();
+        _display.Changed += _ => UpdateLightsOff();
 
         _connectTimer = new System.Windows.Forms.Timer { Interval = 3000 };
         _connectTimer.Tick += (_, _) => { TryConnect(); TryConnectMouse(); TryConnectPc(); };
@@ -196,9 +201,30 @@ public sealed class AppController : IDisposable
 
     public void SetLightsOff(bool off)
     {
+        _userLightsOff = off;
+        UpdateLightsOff();
+    }
+
+    /// <summary>Monitori su ugašeni (štednja energije) i zato je ugašena i rasvjeta.</summary>
+    public bool DarkForDisplays => Settings.LightsOffWithDisplays && _display != null && _display.DisplaysOff;
+
+    /// <summary>Pozvati nakon promjene opcije „ugasi rasvjetu kad se ugase monitori“.</summary>
+    public void DisplaySettingsChanged()
+    {
+        UpdateLightsOff();
+        SaveSoon();
+    }
+
+    /// <summary>Rasvjeta je ugašena ako ju je korisnik ugasio ili ako su monitori ugašeni (kad je opcija uključena).</summary>
+    private void UpdateLightsOff()
+    {
+        if (_disposed) return;
+        bool off = _userLightsOff || DarkForDisplays;
+        if (off == Engine.LightsOff) return;
         Engine.LightsOff = off;
         Engine.ForceResend();
         ApplySolidModes();
+        StateChanged?.Invoke();
     }
 
     private void ApplySolidModes()
@@ -563,6 +589,7 @@ public sealed class AppController : IDisposable
         _connectTimer.Stop();
         _watchTimer.Stop();
         _saveTimer.Stop();
+        _display.Dispose();
         Player.StopAll();
         if (Recorder.IsRecording) Recorder.Stop();
         Hook.Dispose();

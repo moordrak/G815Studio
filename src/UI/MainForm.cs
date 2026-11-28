@@ -48,7 +48,7 @@ public sealed class MainForm : Form
     private Label _effLabel;
 
     // postavke
-    private CheckBox _autostart, _zoneTest, _lightsOffOnExit;
+    private CheckBox _autostart, _zoneTest, _lightsOffOnExit, _lightsOffWithDisplays;
     private List<KeyDef> _shownKeys;
     private ComboBox _layoutCombo, _zoneKey;
     private NumericUpDown _fps, _zoneNum;
@@ -781,6 +781,14 @@ public sealed class MainForm : Form
             _c.SaveSoon();
         };
         general.Controls.Add(_lightsOffOnExit);
+        _lightsOffWithDisplays = new CheckBox { Text = "Ugasi rasvjetu kad se monitori ugase (štednja energije) i upali je kad se upale", AutoSize = true };
+        _lightsOffWithDisplays.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.LightsOffWithDisplays = _lightsOffWithDisplays.Checked;
+            _c.DisplaySettingsChanged();
+        };
+        general.Controls.Add(_lightsOffWithDisplays);
 
         var row = Ui.Flow();
         row.Controls.Add(Ui.Lbl("Raspored tipkovnice:"));
@@ -1082,6 +1090,7 @@ public sealed class MainForm : Form
 
             _autostart.Checked = Autostart.IsEnabled;
             _lightsOffOnExit.Checked = _c.Settings.LightsOffOnExit;
+            _lightsOffWithDisplays.Checked = _c.Settings.LightsOffWithDisplays;
             _mouseEnable.Checked = _c.Settings.MouseEnabled;
             _mouseHost.Checked = _c.Settings.MouseHostMode;
             _mouseFollow.Checked = _c.Settings.MouseFollow;
