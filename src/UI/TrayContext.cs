@@ -50,6 +50,7 @@ internal sealed class TrayContext : ApplicationContext
 
     public TrayContext(bool startHidden)
     {
+        Current = this;
         _ui = SynchronizationContext.Current;
         _c = new AppController();
 
@@ -57,7 +58,7 @@ internal sealed class TrayContext : ApplicationContext
         _status = new ToolStripMenuItem("…") { Enabled = false };
         _profilesMenu = new ToolStripMenuItem("Profil");
         _lightsOff = new ToolStripMenuItem("Ugasi osvjetljenje") { CheckOnClick = true };
-        _lightsOff.CheckedChanged += (_, _) => _c.Engine.LightsOff = _lightsOff.Checked;
+        _lightsOff.CheckedChanged += (_, _) => _c.SetLightsOff(_lightsOff.Checked);
 
         _menu.Items.Add(new ToolStripMenuItem("Otvori G815 Studio", null, (_, _) => ShowForm()) { Font = new Font(_menu.Font, FontStyle.Bold) });
         _menu.Items.Add(_status);
@@ -123,6 +124,11 @@ internal sealed class TrayContext : ApplicationContext
         _form.Activate();
         _form.BringToFront();
     }
+
+    /// <summary>Trenutni primjerak (za uredan izlaz iz drugih dijelova programa).</summary>
+    public static TrayContext Current { get; private set; }
+
+    public void RequestExit() => Exit();
 
     private void Exit()
     {

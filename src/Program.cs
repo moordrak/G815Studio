@@ -7,6 +7,11 @@ internal static class Program
     {
         using var mutex = new Mutex(true, @"Local\G815Studio_SingleInstance", out bool created);
         using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\G815Studio_Show");
+        if (!created && args.Any(a => a.Equals("--restart", StringComparison.OrdinalIgnoreCase)))
+        {
+            // ponovno pokretanje (npr. kao administrator): pričekaj da se stari primjerak zatvori
+            try { created = mutex.WaitOne(20_000); } catch (AbandonedMutexException) { created = true; }
+        }
         if (!created)
         {
             // već radi – samo mu javi da otvori prozor

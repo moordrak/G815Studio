@@ -45,10 +45,16 @@ public sealed class EffectParams
 {
     public string Color1;
     public string Color2;
+    public string Color3;           // neobavezne dodatne boje gradijenta (null = samo dvije boje)
+    public string Color4;
     public string Background = "#000000";
     public int Speed = 50;          // 1..100
     public int Direction;           // 0 lijevo→desno, 1 desno→lijevo, 2 gore→dolje, 3 iz središta
     public bool Rainbow = true;     // kod efekata s dugom: duga ili vlastite boje (Boja 1 ↔ Boja 2)
+
+    /// <summary>Efekti koji prelijevaju boje pa mogu imati i Boju 3 i Boju 4.</summary>
+    public static bool SupportsFourColors(EffectType e) => e is EffectType.Wave or EffectType.ColorCycle or EffectType.Swirl
+        or EffectType.RadialRainbow or EffectType.GradientWave or EffectType.Mosaic or EffectType.Audio or EffectType.Spectrum;
 
     public static EffectParams DefaultFor(EffectType e, LightingConfig legacy)
     {
@@ -159,6 +165,26 @@ public sealed class AppSettings
     public bool MouseFollow = true;       // true = prati efekt tipkovnice, false = jedna boja
     public string MouseColor = "#00C8FF";
     public bool MouseHostMode;            // miš u host načinu dok program radi
+    public bool LightsOffOnExit = true;   // pri izlazu ugasi tipkovnicu, miša i računalo (ništa ne svijetli)
+    public bool PcEnabled = true;
+    public bool RamEnabled;               // Kingston Fury memorija (treba PawnIO i administratorska prava)
+    public bool PcFollow = true;          // true = prati efekt tipkovnice, false = jedna boja
+    public string PcColor = "#00C8FF";
+    public bool PcSwapRG;                 // dodatna zamjena crvene i zelene za ventilatore s drugim redoslijedom
+    /// <summary>Raspored uređaja na slici: "mouse", "ram", "pc:&lt;izlaz&gt;" → položaj, oblik i smjer.</summary>
+    public Dictionary<string, DevicePlacement> Placements = new();
+}
+
+/// <summary>Kako je uređaj postavljen na slici (o tome ovisi kako ga efekti zahvaćaju).</summary>
+public sealed class DevicePlacement
+{
+    public float? X, Y;                   // gornji lijevi kut u jedinicama tipki; null = zadani položaj
+    public string Shape = "line";         // "line" = traka, "ring" = krug (ventilator)
+    public bool Vertical;                 // traka okomito
+    public bool Reverse;                  // LED-ice obrnutim redom (drugi smjer)
+    public bool Mirror;                   // zrcalno: druga polovica uređaja ponavlja prvu
+    public bool Linear;                   // krug: efekt ide redom LED-ica kao po ravnoj traci, ne po krugu
+    public float Size;                    // duljina trake / promjer kruga u jedinicama tipki; 0 = zadano
 }
 
 public static class SettingsStore
@@ -200,6 +226,8 @@ public static class SettingsStore
     {
         s.Profiles ??= new();
         s.ZoneOverrides ??= new();
+        s.Placements ??= new();
+        foreach (var k in s.Placements.Where(kv => kv.Value == null).Select(kv => kv.Key).ToList()) s.Placements.Remove(k);
         if (s.Profiles.Count == 0) s.Profiles.Add(CreateDefaultProfile());
         foreach (var p in s.Profiles)
         {

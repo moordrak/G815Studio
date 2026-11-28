@@ -11,7 +11,7 @@ public sealed class MainForm : Form
     private ComboBox _profileCombo;
     private ToolStripStatusLabel _stDevice, _stProfile, _stBank, _stInfo;
     private readonly System.Windows.Forms.Timer _uiTimer = new() { Interval = 33 };
-    private readonly Color[] _snapshot = new Color[256];
+    private readonly Color[] _snapshot = new Color[KeyLayouts.ZoneCount];
     private int _tick;
 
     // okvir (bočni izbornik, zaglavlje)
@@ -26,7 +26,8 @@ public sealed class MainForm : Form
     internal KeyboardView KeyboardViewForScreenshots => _kbView;
     private ComboBox _effectCombo, _dirCombo;
     private TrackBar _speed, _bright;
-    private Button _c1Btn, _c2Btn, _bgBtn, _brushBtn;
+    private Button _c1Btn, _c2Btn, _c3Btn, _c4Btn, _bgBtn, _brushBtn;
+    private CheckBox _fourChk;
     private Color _brush = Color.FromArgb(255, 40, 40);
     private Label _effectHelp, _selInfo, _colorsTitle, _colorsNote, _speedLbl, _dirLbl;
     private CheckBox _rainbowChk;
@@ -47,7 +48,8 @@ public sealed class MainForm : Form
     private Label _effLabel;
 
     // postavke
-    private CheckBox _autostart, _zoneTest;
+    private CheckBox _autostart, _zoneTest, _lightsOffOnExit;
+    private List<KeyDef> _shownKeys;
     private ComboBox _layoutCombo, _zoneKey;
     private NumericUpDown _fps, _zoneNum;
     private Label _devInfo;
@@ -56,6 +58,23 @@ public sealed class MainForm : Form
     private RadioButton _mouseFollow, _mouseSolid;
     private Button _mouseColorBtn;
     private Label _mouseStatus;
+    private CheckBox _pcEnable, _pcSwap;
+    private RadioButton _pcFollow, _pcSolid;
+    private Button _pcColorBtn;
+    private Label _pcStatus;
+    private ComboBox _pcChannel;
+    private NumericUpDown _pcLeds;
+    private Button _pcWrite;
+    private CheckBox _ramEnable;
+    private Label _ramStatus;
+    private CheckBox _arrangeChk, _devVertical, _devReverse, _devMirror, _devLinear;
+    private ComboBox _devCombo, _devShape;
+    private NumericUpDown _devSize;
+
+    private sealed record DeviceItem(string Id, string Name)
+    {
+        public override string ToString() => Name;
+    }
     private readonly System.Windows.Forms.Timer _zoneTimer = new() { Interval = 1000 };
 
     // koje boje i postavke koristi pojedini efekt (null = ne koristi)
@@ -78,7 +97,7 @@ public sealed class MainForm : Form
         [EffectType.Starry] = ("Zvijezda 1", "Zvijezda 2", "Nebo", false, true, false, null),
         [EffectType.Rain] = ("Kapi", "Vrh kapi", "Pozadina", false, true, false, null),
         [EffectType.Fire] = ("Plamen", "Vrhovi plamena", "Pozadina", false, true, false, null),
-        [EffectType.Visor] = ("Traka", "Trag", "Pozadina", false, true, false, null),
+        [EffectType.Visor] = ("Traka", "Trag", "Pozadina", false, true, true, null),
         [EffectType.Lightning] = ("Munja", "Odsjaj", "Pozadina", false, true, false, null),
         [EffectType.Mosaic] = ("Boja 1", "Boja 2", null, true, true, false, "Uključena duga = nasumične boje; isključena = nijanse između Boje 1 i Boje 2."),
     };
@@ -102,7 +121,7 @@ public sealed class MainForm : Form
         (EffectType.Starry, "Zvjezdano nebo", "Nasumične tipke polako zasvijetle (između Boje 1 i Boje 2) na Pozadini."),
         (EffectType.Rain, "Kiša / Matrix", "Kapi Boje 1 padaju niz tipkovnicu i ostavljaju trag."),
         (EffectType.Fire, "Vatra", "Plamen se diže od donjeg reda prema gore."),
-        (EffectType.Visor, "Skener", "Traka Boje 1 putuje lijevo-desno i ostavlja trag, na Pozadini."),
+        (EffectType.Visor, "Skener", "Traka Boje 1 putuje lijevo-desno ili gore-dolje (Smjer) preko svih uređaja i ostavlja trag, na Pozadini."),
         (EffectType.Lightning, "Munja", "Nasumični bljeskovi Boje 1 preko cijele tipkovnice."),
         (EffectType.Mosaic, "Mozaik", "Svaka tipka povremeno glatko prijeđe u novu nasumičnu boju.")
     };
@@ -347,6 +366,12 @@ public sealed class MainForm : Form
         _kbView = new KeyboardView { Dock = DockStyle.Fill, ColorOf = k => _snapshot[k.Zone], Margin = new Padding(0, 0, 0, 8) };
         _kbView.SelectionChanged += (_, _) => UpdateSelInfo();
         _kbView.BankClicked += bank => _c.SetBank(bank);
+        _kbView.DeviceMoved += (id, x, y) => _c.MoveDevice(id, x, y);
+        _kbView.DeviceClicked += id =>
+        {
+            var item = _devCombo.Items.OfType<DeviceItem>().FirstOrDefault(d => d.Id == id);
+            if (item != null) _devCombo.SelectedItem = item;
+        };
         split.Controls.Add(_kbView, 0, 0);
 
         var controls = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true };
@@ -359,7 +384,7 @@ public sealed class MainForm : Form
         {
             if (_effectCombo.SelectedIndex < 0) return;
             _effectHelp.Text = Effects[_effectCombo.SelectedIndex].Help;
-            _dirCombo.Enabled = Effects[_effectCombo.SelectedIndex].Type is EffectType.Wave or EffectType.GradientWave;
+            _dirCombo.Enabled = Effects[_effectCombo.SelectedIndex].Type is EffectType.Wave or EffectType.GradientWave or EffectType.Visor;
             for (int t = 0; t < _tiles.Count; t++) { _tiles[t].Selected = t == _effectCombo.SelectedIndex; _tiles[t].Invalidate(); }
             if (_loading) return;
             P.Lighting.Effect = Effects[_effectCombo.SelectedIndex].Type;
@@ -419,7 +444,7 @@ public sealed class MainForm : Form
 
         param.Controls.Add(Ui.Lbl("Smjer vala"));
         _dirCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
-        _dirCombo.Items.AddRange(new object[] { "Lijevo → desno", "Desno → lijevo", "Gore → dolje", "Iz središta" });
+        _dirCombo.Items.AddRange(new object[] { "Lijevo → desno", "Desno → lijevo", "Gore → dolje", "Iz središta", "Dolje → gore" });
         _dirCombo.SelectedIndexChanged += (_, _) => { if (_loading) return; P.Lighting.Current.Direction = _dirCombo.SelectedIndex; _c.LightingChanged(P); };
         param.Controls.Add(_dirCombo);
         controls.Controls.Add(Ui.Group("Efekt", fx));
@@ -438,14 +463,35 @@ public sealed class MainForm : Form
         };
         _c1Btn = Ui.Btn("Boja 1", (_, _) => PickConfigColor(1), 250);
         _c2Btn = Ui.Btn("Boja 2", (_, _) => PickConfigColor(2), 250);
+        _fourChk = new CheckBox { Text = "Četiri boje u prijelazu", AutoSize = true, Margin = new Padding(3, 4, 3, 4) };
+        _fourChk.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            var ep = P.Lighting.Current;
+            if (_fourChk.Checked)
+            {
+                ep.Color3 ??= "#FFD000";
+                ep.Color4 ??= "#00FF88";
+            }
+            else ep.Color3 = ep.Color4 = null;
+            UpdateColorButtons();
+            _c.LightingChanged(P);
+        };
+        _c3Btn = Ui.Btn("Boja 3", (_, _) => PickConfigColor(4), 250);
+        _c4Btn = Ui.Btn("Boja 4", (_, _) => PickConfigColor(5), 250);
         _bgBtn = Ui.Btn("Pozadina", (_, _) => PickConfigColor(3), 250);
         _colorsNote = new Label { AutoSize = true, MaximumSize = new Size(250, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 0) };
         cols.Controls.Add(_colorsTitle);
         cols.Controls.Add(_rainbowChk);
         cols.Controls.Add(_c1Btn);
         cols.Controls.Add(_c2Btn);
+        cols.Controls.Add(_fourChk);
+        cols.Controls.Add(_c3Btn);
+        cols.Controls.Add(_c4Btn);
         cols.Controls.Add(_bgBtn);
         cols.Controls.Add(_colorsNote);
+        cols.Controls.Add(Ui.Btn("Zadane boje ovog efekta", (_, _) => ResetEffectColors(false), 250));
+        cols.Controls.Add(Ui.Btn("Zadane boje svih efekata", (_, _) => ResetEffectColors(true), 250));
         controls.Controls.Add(Ui.Group("Boje efekta", cols));
 
         // --- bojanje tipki
@@ -489,8 +535,60 @@ public sealed class MainForm : Form
         Q("Modifikatori", k => k.Group == "mods");
         Q("G tipke + logo", k => k.Group is "g" or "logo");
         Q("Mediji i gornje tipke", k => k.Group is "media" or "top");
+        Q("Miš", k => k.Group == "mouse");
+        Q("Računalo", k => k.Group == "pc");
+        Q("Memorija", k => k.Group == "ram");
         quick.Controls.Add(Ui.Btn("Poništi odabir", (_, _) => _kbView.ClearSelection(), 200));
         controls.Controls.Add(Ui.Group("Brzi odabir (Ctrl = dodaj)", quick));
+
+        // --- raspored uređaja: položaj, oblik i smjer (o tome ovisi kako efekti prelaze s uređaja na uređaj)
+        var lay = Ui.Flow(FlowDirection.TopDown);
+        _arrangeChk = new CheckBox { Text = "Pomiči uređaje mišem po slici", AutoSize = true };
+        _arrangeChk.CheckedChanged += (_, _) =>
+        {
+            _kbView.ArrangeMode = _arrangeChk.Checked;
+            _kbView.HighlightDevice = _arrangeChk.Checked ? (_devCombo.SelectedItem as DeviceItem)?.Id : null;
+        };
+        lay.Controls.Add(_arrangeChk);
+        _devCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 250 };
+        _devCombo.SelectedIndexChanged += (_, _) =>
+        {
+            if (_arrangeChk.Checked) { _kbView.HighlightDevice = (_devCombo.SelectedItem as DeviceItem)?.Id; _kbView.Invalidate(); }
+            LoadDevicePlacement();
+        };
+        lay.Controls.Add(_devCombo);
+        var shapeRow = Ui.Flow();
+        _devShape = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110, Margin = new Padding(3, 3, 6, 3) };
+        _devShape.Items.AddRange(new object[] { "Traka", "Krug" });
+        _devShape.SelectedIndexChanged += (_, _) => SaveDevicePlacement(shapeChanged: true);
+        _devVertical = new CheckBox { Text = "Okomito", AutoSize = true, Margin = new Padding(3, 6, 6, 3) };
+        _devVertical.CheckedChanged += (_, _) => SaveDevicePlacement();
+        shapeRow.Controls.Add(_devShape);
+        shapeRow.Controls.Add(_devVertical);
+        lay.Controls.Add(shapeRow);
+        _devLinear = new CheckBox { Text = "Krug svijetli linearno (redom LED-ica)", AutoSize = true };
+        _devLinear.CheckedChanged += (_, _) => SaveDevicePlacement();
+        lay.Controls.Add(_devLinear);
+        _devReverse = new CheckBox { Text = "Obrnuti smjer LED-ica", AutoSize = true };
+        _devReverse.CheckedChanged += (_, _) => SaveDevicePlacement();
+        lay.Controls.Add(_devReverse);
+        _devMirror = new CheckBox { Text = "Zrcalno (druga polovica ponavlja prvu)", AutoSize = true };
+        _devMirror.CheckedChanged += (_, _) => SaveDevicePlacement();
+        lay.Controls.Add(_devMirror);
+        var sizeRow = Ui.Flow();
+        sizeRow.Controls.Add(new Label { Text = "Veličina (0 = zadano):", AutoSize = true, Margin = new Padding(3, 6, 6, 3) });
+        _devSize = new NumericUpDown { Minimum = 0, Maximum = 40, DecimalPlaces = 1, Increment = 0.5m, Width = 70 };
+        _devSize.ValueChanged += (_, _) => SaveDevicePlacement();
+        sizeRow.Controls.Add(_devSize);
+        lay.Controls.Add(sizeRow);
+        lay.Controls.Add(Ui.Btn("Vrati zadani raspored", (_, _) => _c.ResetPlacements(), 200));
+        lay.Controls.Add(new Label
+        {
+            AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = SystemColors.GrayText,
+            Text = "Postavi uređaje na slici kao što stoje u kućištu (ventilatori kao krug). Efekti poput vala i skenera " +
+                   "tada glatko prelaze preko svih uređaja lijevo-desno ili gore-dolje."
+        });
+        controls.Controls.Add(Ui.Group("Raspored uređaja", lay));
 
         split.Controls.Add(controls, 0, 1);
         page.Controls.Add(split);
@@ -675,6 +773,14 @@ public sealed class MainForm : Form
             catch (Exception ex) { MessageBox.Show(this, ex.Message, "Autostart", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         };
         general.Controls.Add(_autostart);
+        _lightsOffOnExit = new CheckBox { Text = "Pri izlazu ugasi sve LED-ice (tipkovnica, miš, računalo)", AutoSize = true };
+        _lightsOffOnExit.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.LightsOffOnExit = _lightsOffOnExit.Checked;
+            _c.SaveSoon();
+        };
+        general.Controls.Add(_lightsOffOnExit);
 
         var row = Ui.Flow();
         row.Controls.Add(Ui.Lbl("Raspored tipkovnice:"));
@@ -832,6 +938,118 @@ public sealed class MainForm : Form
         });
         flow.Controls.Add(Ui.Group("Miš", mouse));
 
+        // ---- računalo (ASRock RGB na matičnoj ploči)
+        var pc = Ui.Flow(FlowDirection.TopDown);
+        _pcEnable = new CheckBox { Text = "Upravljaj RGB osvjetljenjem računala (ASRock Polychrome, ARGB i RGB headeri na ploči)", AutoSize = true };
+        _pcEnable.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.PcEnabled = _pcEnable.Checked;
+            _c.PcSettingsChanged();
+        };
+        pc.Controls.Add(_pcEnable);
+        var pr = Ui.Flow();
+        _pcFollow = new RadioButton { Text = "Prati efekt tipkovnice", AutoSize = true, Margin = new Padding(3, 9, 16, 3) };
+        _pcSolid = new RadioButton { Text = "Jedna boja:", AutoSize = true, Margin = new Padding(3, 9, 6, 3) };
+        _pcFollow.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.PcFollow = _pcFollow.Checked;
+            _c.PcSettingsChanged();
+        };
+        _pcColorBtn = Ui.Btn("Boja računala", (_, _) =>
+        {
+            var col = Ui.PickColor(this, ColorUtil.Parse(_c.Settings.PcColor));
+            if (!col.HasValue) return;
+            _c.Settings.PcColor = ColorUtil.ToHex(col.Value);
+            Ui.PaintSwatch(_pcColorBtn, col.Value);
+            _pcSolid.Checked = true;
+            _c.Settings.PcFollow = false;
+            _c.PcSettingsChanged();
+        }, 140);
+        pr.Controls.Add(_pcFollow);
+        pr.Controls.Add(_pcSolid);
+        pr.Controls.Add(_pcColorBtn);
+        pc.Controls.Add(pr);
+        _pcSwap = new CheckBox { Text = "Zamijeni crvenu i zelenu (ako ventilatori pokazuju zeleno umjesto crvenog)", AutoSize = true, Margin = new Padding(3, 8, 3, 3) };
+        _pcSwap.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.PcSwapRG = _pcSwap.Checked;
+            _c.PcSettingsChanged();
+        };
+        pc.Controls.Add(_pcSwap);
+        var lr = Ui.Flow();
+        lr.Controls.Add(new Label { Text = "Broj LED-ica na izlazu:", AutoSize = true, Margin = new Padding(3, 9, 6, 3) });
+        _pcChannel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220, Margin = new Padding(3, 5, 6, 3) };
+        _pcLeds = new NumericUpDown { Minimum = 0, Maximum = 100, Width = 70, Margin = new Padding(3, 5, 6, 3) };
+        _pcChannel.SelectedIndexChanged += (_, _) =>
+        {
+            if (_pcChannel.SelectedItem is not AsrockChannel ch) return;
+            _pcLeds.Value = Math.Clamp(ch.LedCount, 0, 100);
+            _pcLeds.Enabled = _pcWrite.Enabled = ch.Addressable;
+        };
+        lr.Controls.Add(_pcChannel);
+        lr.Controls.Add(_pcLeds);
+        _pcWrite = Ui.Btn("Upiši u kontroler", (_, _) =>
+        {
+            if (_pcChannel.SelectedItem is not AsrockChannel ch || !ch.Addressable) return;
+            _c.SetPcLedCount(ch.ZoneType, (int)_pcLeds.Value);
+        }, 160);
+        lr.Controls.Add(_pcWrite);
+        pc.Controls.Add(lr);
+        _pcStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3) };
+        pc.Controls.Add(_pcStatus);
+        pc.Controls.Add(new Label
+        {
+            AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
+            Text = "Svaki izlaz kontrolera crta se sa svim svojim LED-icama, pa efekti glatko prelaze i na ventilatore i LED trake. " +
+                   "Položaj, oblik (traka ili krug) i smjer namještaju se na kartici Osvjetljenje → Raspored uređaja. " +
+                   "Broj LED-ica mijenja se samo za ARGB izlaze: upisuje se u kontroler na ploči i vrijedi i za ASRockov program. " +
+                   "Pri izlazu iz programa ploča se vraća na svoje prijašnje osvjetljenje. ASRock Polychrome Sync mora biti zatvoren."
+        });
+        // ---- memorija (Kingston Fury) – zasad samo dijagnostika, bez upisa
+        var ram = Ui.Flow(FlowDirection.TopDown);
+        _ramEnable = new CheckBox { Text = "Upravljaj osvjetljenjem memorije (Kingston Fury) – prati efekte", AutoSize = true };
+        _ramEnable.CheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _c.Settings.RamEnabled = _ramEnable.Checked;
+            _c.RamSettingsChanged();
+        };
+        ram.Controls.Add(_ramEnable);
+        _ramStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3) };
+        ram.Controls.Add(_ramStatus);
+        var ramStatus = new Label { AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 6, 3, 3), Text = "Nije ispitano." };
+        Button ramBtn = null;
+        ramBtn = Ui.Btn("Ispitaj RAM (samo čitanje)", async (_, _) =>
+        {
+            ramBtn.Enabled = false;
+            ramStatus.Text = "Ispitujem SMBus…";
+            try { ramStatus.Text = await Task.Run(RamProbe.Run) + "  Detalji su u log.txt."; }
+            catch (Exception ex) { ramStatus.Text = "Greška: " + ex.Message; }
+            finally { ramBtn.Enabled = true; }
+        }, 220);
+        ram.Controls.Add(ramBtn);
+        if (!PawnIoHost.IsElevated)
+        {
+            ram.Controls.Add(Ui.Btn("Ponovno pokreni kao administrator", (_, _) =>
+            {
+                if (PawnIoHost.RestartElevated()) { if (TrayContext.Current != null) TrayContext.Current.RequestExit(); else Application.Exit(); }
+            }, 260));
+        }
+        ram.Controls.Add(ramStatus);
+        ram.Controls.Add(new Label
+        {
+            AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
+            Text = "Memorija se ne vidi kao USB uređaj, nego preko SMBus-a na ploči, za što treba drajver PawnIO (pawnio.eu). " +
+                   "Program ga nosi u sebi: kad zatreba, privremeno ga instalira, a pri izlazu ga ukloni (ako ga nisi imao od prije). " +
+                   "Program pritom mora raditi kao administrator. Dok G815 Studio upravlja memorijom, SignalRGB, OpenRGB i slični programi ne smiju raditi. " +
+                   "„Ispitaj RAM“ samo čita adrese i zapisuje ih u log."
+        });
+        flow.Controls.Add(Ui.Group("Računalo (ASRock RGB)", pc));
+        flow.Controls.Add(Ui.Group("Memorija (Kingston Fury)", ram));
+
         page.Controls.Add(flow);
         return page;
     }
@@ -863,11 +1081,18 @@ public sealed class MainForm : Form
             _profList.SelectedItem = P.Name;
 
             _autostart.Checked = Autostart.IsEnabled;
+            _lightsOffOnExit.Checked = _c.Settings.LightsOffOnExit;
             _mouseEnable.Checked = _c.Settings.MouseEnabled;
             _mouseHost.Checked = _c.Settings.MouseHostMode;
             _mouseFollow.Checked = _c.Settings.MouseFollow;
             _mouseSolid.Checked = !_c.Settings.MouseFollow;
             Ui.PaintSwatch(_mouseColorBtn, ColorUtil.Parse(_c.Settings.MouseColor));
+            _pcEnable.Checked = _c.Settings.PcEnabled;
+            _ramEnable.Checked = _c.Settings.RamEnabled;
+            _pcFollow.Checked = _c.Settings.PcFollow;
+            _pcSolid.Checked = !_c.Settings.PcFollow;
+            _pcSwap.Checked = _c.Settings.PcSwapRG;
+            Ui.PaintSwatch(_pcColorBtn, ColorUtil.Parse(_c.Settings.PcColor));
             _layoutCombo.SelectedIndex = _c.IsIso ? 0 : 1;
             _fps.Value = Math.Clamp(_c.Settings.Fps, 5, 60);
         }
@@ -883,13 +1108,90 @@ public sealed class MainForm : Form
 
     private void ReloadKeys()
     {
+        _shownKeys = _c.Keys;
         _kbView.SetKeys(_c.Keys);
         object sel = _zoneKey.SelectedItem;
         string selId = (sel as KeyDef)?.Id;
         _zoneKey.Items.Clear();
-        foreach (var k in _c.Keys) _zoneKey.Items.Add(k);
+        foreach (var k in _c.Keys.Where(k => k.Zone < 0x100)) _zoneKey.Items.Add(k);
         if (selId != null) _zoneKey.SelectedItem = _c.Keys.FirstOrDefault(k => k.Id == selId);
+        RefreshDeviceList();
         UpdateSelInfo();
+    }
+
+    private void RefreshDeviceList()
+    {
+        var items = _c.Keys.Where(k => k.Device != null).GroupBy(k => k.Device)
+            .Select(g => new DeviceItem(g.Key, g.First().DeviceName ?? g.Key)).ToList();
+        string selId = (_devCombo.SelectedItem as DeviceItem)?.Id;
+        bool was = _loading;
+        _loading = true;
+        try
+        {
+            if (!items.SequenceEqual(_devCombo.Items.OfType<DeviceItem>()))
+            {
+                _devCombo.Items.Clear();
+                foreach (var it in items) _devCombo.Items.Add(it);
+            }
+            var sel = items.FirstOrDefault(i => i.Id == selId) ?? items.FirstOrDefault();
+            if (sel != null) _devCombo.SelectedItem = _devCombo.Items.OfType<DeviceItem>().First(i => i.Id == sel.Id);
+        }
+        finally { _loading = was; }
+        LoadDevicePlacement();
+    }
+
+    private void LoadDevicePlacement()
+    {
+        var item = _devCombo.SelectedItem as DeviceItem;
+        bool pc = item != null && item.Id.StartsWith("pc:", StringComparison.Ordinal);
+        bool was = _loading;
+        _loading = true;
+        try
+        {
+            _c.Settings.Placements.TryGetValue(item?.Id ?? "", out var p);
+            bool ring = p?.Shape == "ring";
+            _devShape.SelectedIndex = ring ? 1 : 0;
+            _devVertical.Checked = p?.Vertical == true;
+            _devLinear.Checked = p?.Linear == true;
+            _devReverse.Checked = p?.Reverse == true;
+            _devMirror.Checked = p?.Mirror == true;
+            _devSize.Value = Math.Clamp((decimal)(p?.Size ?? 0), _devSize.Minimum, _devSize.Maximum);
+            _devShape.Enabled = _devSize.Enabled = pc;
+            _devReverse.Enabled = _devMirror.Enabled = item != null;   // smjer i zrcalo na svim uređajima osim tipkovnice
+            _devVertical.Enabled = pc && !ring;
+            _devLinear.Enabled = pc && ring;
+        }
+        finally { _loading = was; }
+    }
+
+    private void SaveDevicePlacement(bool shapeChanged = false)
+    {
+        if (_loading || _devCombo.SelectedItem is not DeviceItem item) return;
+        var p = _c.GetPlacement(item.Id);
+        if (!item.Id.StartsWith("pc:", StringComparison.Ordinal))
+        {
+            p.Reverse = _devReverse.Checked;    // miš i memorija: smjer, zrcalo (i položaj povlačenjem)
+            p.Mirror = _devMirror.Checked;
+            _c.PlacementChanged();
+            return;
+        }
+        p.Shape = _devShape.SelectedIndex == 1 ? "ring" : "line";
+        if (shapeChanged)
+        {
+            p.Size = 0;                 // zadana veličina za novi oblik
+            bool was = _loading;
+            _loading = true;
+            _devSize.Value = 0;
+            _loading = was;
+        }
+        else p.Size = (float)_devSize.Value;
+        p.Vertical = p.Shape == "line" && _devVertical.Checked;
+        p.Linear = p.Shape == "ring" && _devLinear.Checked;
+        p.Reverse = _devReverse.Checked;
+        p.Mirror = _devMirror.Checked;
+        _devVertical.Enabled = p.Shape == "line";
+        _devLinear.Enabled = p.Shape == "ring";
+        _c.PlacementChanged();
     }
 
     private void OnStateChanged()
@@ -899,6 +1201,8 @@ public sealed class MainForm : Form
             ReloadAll();
         else
             UpdateStatus();
+        // miš ili ASRock su se spojili nakon otvaranja prozora: raspored tipki je nov, pa ga treba ponovno nacrtati
+        if (!ReferenceEquals(_shownKeys, _c.Keys)) ReloadKeys();
         UpdateRecordingUi();
     }
 
@@ -945,9 +1249,24 @@ public sealed class MainForm : Form
         _stDevice.ForeColor = kb.IsConnected ? Theme.Good : Color.FromArgb(255, 138, 155);
 
         _mouseStatus.Text = !_c.Settings.MouseEnabled ? "Isključeno." : _c.Mouse.Status;
+        _pcStatus.Text = !_c.Settings.PcEnabled ? "Isključeno." : _c.Pc.Status;
+        _ramStatus.Text = _c.RamStatus;
+        RefreshPcChannels();
 
         string fg = _c.ForegroundApp ?? "?";
         _effLabel.Text = $"Sada aktivan: {_c.EffectiveProfile?.Name}   (zadnja aplikacija u fokusu: {fg})";
+    }
+
+    private void RefreshPcChannels()
+    {
+        var chans = _c.Pc.IsConnected ? _c.Pc.Channels.ToList() : new List<AsrockChannel>();
+        string key = string.Join("|", chans.Select(c => c.ToString()));
+        if ((string)_pcChannel.Tag == key) return;
+        int sel = _pcChannel.SelectedIndex;
+        _pcChannel.Tag = key;
+        _pcChannel.Items.Clear();
+        foreach (var ch in chans) _pcChannel.Items.Add(ch);
+        if (chans.Count > 0) _pcChannel.SelectedIndex = Math.Clamp(sel, 0, chans.Count - 1);
     }
 
     /// <summary>Pomiče ispitivač na sljedeću zonu koju ne koristi nijedna druga tipka.</summary>
@@ -977,14 +1296,35 @@ public sealed class MainForm : Form
     private void PickConfigColor(int which)
     {
         var ep = P.Lighting.Current;
-        string cur = which == 1 ? ep.Color1 : which == 2 ? ep.Color2 : ep.Background;
+        string cur = which switch { 1 => ep.Color1, 2 => ep.Color2, 4 => ep.Color3, 5 => ep.Color4, _ => ep.Background };
         var c = Ui.PickColor(this, ColorUtil.Parse(cur));
         if (!c.HasValue) return;
         string hex = ColorUtil.ToHex(c.Value);
         if (which == 1) ep.Color1 = hex;
         else if (which == 2) ep.Color2 = hex;
+        else if (which == 4) ep.Color3 = hex;
+        else if (which == 5) ep.Color4 = hex;
         else ep.Background = hex;
         UpdateColorButtons();
+        _c.LightingChanged(P);
+    }
+
+    /// <summary>Vraća zadane boje (i dugu) odabranom efektu ili svim efektima; brzina i smjer ostaju.</summary>
+    private void ResetEffectColors(bool all)
+    {
+        var L = P.Lighting;
+        foreach (var e in all ? Enum.GetValues<EffectType>() : new[] { L.Effect })
+        {
+            var ep = L.For(e);
+            var d = EffectParams.DefaultFor(e, null);
+            ep.Color1 = d.Color1;
+            ep.Color2 = d.Color2;
+            ep.Color3 = d.Color3;
+            ep.Color4 = d.Color4;
+            ep.Background = d.Background;
+            ep.Rainbow = d.Rainbow;
+        }
+        LoadEffectParams();
         _c.LightingChanged(P);
     }
 
@@ -1004,7 +1344,7 @@ public sealed class MainForm : Form
             _rainbowChk.Checked = ep.Rainbow;
             _speed.Value = Math.Clamp(ep.Speed, _speed.Minimum, _speed.Maximum);
             _speed.Enabled = slot.Speed;
-            _dirCombo.SelectedIndex = Math.Clamp(ep.Direction, 0, 3);
+            _dirCombo.SelectedIndex = Math.Clamp(ep.Direction, 0, 4);
             _dirCombo.Enabled = slot.Dir;
             _colorsNote.Text = slot.Note ?? "";
             _colorsNote.Visible = !string.IsNullOrEmpty(slot.Note);
@@ -1033,6 +1373,16 @@ public sealed class MainForm : Form
         }
         Set(_c1Btn, slot.C1, ep.Color1, custom);
         Set(_c2Btn, slot.C2, ep.Color2, custom);
+        bool four = EffectParams.SupportsFourColors(L.Effect) && slot.C2 != null;
+        bool was = _loading;
+        _loading = true;
+        _fourChk.Visible = four;
+        _fourChk.Checked = ep.Color3 != null || ep.Color4 != null;
+        _fourChk.Enabled = custom;
+        _loading = was;
+        bool show34 = four && _fourChk.Checked;
+        Set(_c3Btn, show34 ? "Boja 3" : null, ep.Color3 ?? ep.Color2, custom);
+        Set(_c4Btn, show34 ? "Boja 4" : null, ep.Color4 ?? ep.Color2, custom);
         Set(_bgBtn, slot.Bg, ep.Background, true);
     }
 

@@ -1,5 +1,23 @@
 # Popis promjena
 
+## v1.8.0
+- **Miš na slici:** G502 X PLUS se crta desno od tipkovnice, s lukom od 8 LED-ica. LED-ice se biraju i boje kistom kao tipke, klik na tijelo miša odabire sve, a u brzom odabiru je dodan gumb „Miš“. Efekti prelaze na miša prema stvarnom položaju LED-ica.
+- **RGB osvjetljenje računala (ASRock Polychrome USB):** program pronalazi RGB kontroler na ASRock pločama (npr. B760M Pro RS), prebacuje ga u izravni način i šalje boje svim LED-icama na ARGB i RGB headerima. Izlazi se crtaju kao trake ispod tipkovnice, pa svi efekti prelaze i na ventilatore i LED trake (svaka ARGB LED-ica dobiva vlastitu boju iz efekta, pa efekti teku glatko duž ventilatora i traka). Uključuje se u *Postavke → Računalo (ASRock RGB)*, a moguće je i jedna boja, zamjena crvene i zelene te upis broja LED-ica po ARGB izlazu. Pri izlazu ploča se vraća na prijašnje osvjetljenje.
+- **Pri izlazu se sve gasi:** tipkovnica, miš i ASRock izlazi ostaju ugašeni nakon zatvaranja programa (tipkovnica ne vraća ugrađene efekte). Može se isključiti u *Postavke → Općenito*. Nakon ponovnog pokretanja računala tipkovnica i miš same vraćaju svoje ugrađene efekte dok se program ne pokrene.
+- **Raspored uređaja:** miš, memorija i svaki izlaz računala mogu se mišem premjestiti po slici (*Osvjetljenje → Raspored uređaja → Pomiči uređaje mišem po slici*). Izlaz može biti traka (vodoravno ili okomito) ili krug za ventilatore, s vlastitom veličinom. Svim uređajima osim tipkovnice (i mišu i memoriji) može se obrnuti smjer LED-ica. Efekti zahvaćaju uređaje prema njihovom mjestu na slici, pa val ili skener glatko prelaze preko svih uređaja.
+- **Zrcalno:** svaki uređaj osim tipkovnice može se zrcaliti, pa druga polovica trake, ventilatora, miša ili memorije ponavlja prvu.
+- **Četiri boje:** efekti s prijelazom boja (val, izmjena boja, spiralna i radijalna duga, gradijentni val, mozaik, VU metar, spektar) mogu prelijevati do četiri vlastite boje.
+- **Zadane boje:** gumbi *Zadane boje ovog efekta* i *Zadane boje svih efekata* vraćaju tvorničke boje (brzina i smjer ostaju).
+- **Tipkovnica pouzdanije i brže:** paket koji tipkovnica odbije (zauzeto) više ne ponavlja cijeli okvir, nego se ponovno šalju samo njegove tipke. Paketi idu u manjim skupinama, gotovo iste boje dijele paket, a kad se slika smiri sve se tipke još jednom osvježe, pa nijedna ne ostane upaljena.
+- Zone koje tipkovnica odbija kao nepostojeće (greška 0x02, npr. ostale od ispitivača zona) program sam prepozna i više ih ne šalje, pa nestaju ponovljene greške u logu.
+- Krug (ventilator) može svijetliti i linearno: efekt ga zahvaća redom LED-ica kao ravnu traku (*Krug svijetli linearno*).
+- *Isključeno* i *Ugasi osvjetljenje* gase i miš i računalo kad su u načinu jedne boje.
+- Skener ima izbor smjera (lijevo-desno ili gore-dolje), a val i gradijentni val imaju i smjer *Dolje → gore*.
+- LED-ice na ploči (PCB) svijetle svaka zasebno i vide se u izborniku izlaza pod *Postavke → Računalo*.
+- Miš i ASRock trake pojavljuju se na slici i kad se spoje tek nakon otvaranja prozora (prije se slika nije osvježila).
+- **Memorija (Kingston Fury DDR4/DDR5):** program pronalazi module po potpisu „FURY“ (DDR5 na 0x60–0x67, DDR4 na 0x58–0x5F), prebacuje ih u izravni način i boji svih 12 LED-ica po modulu, pa memorija prati efekte. Moduli se crtaju ispod miša. Uključuje se u *Postavke → Memorija*. Pri izlazu se gase ili vraćaju na prijašnji način. U SPD se nikad ništa ne upisuje. Za to treba drajver PawnIO: program nosi službeni PawnIO 2.2.0 i SMBus modul u sebi, instalira ga samo kad zatreba i uklanja pri izlazu (ako ga nisi imao od prije). Program tada mora raditi kao administrator (gumb „Ponovno pokreni kao administrator“). SignalRGB i slični programi ne smiju istovremeno raditi. Licence i izvori su u `third_party/pawnio`.
+- U `log.txt` se zapisuje što je pronađeno na ASRock kontroleru (izlazi, broj LED-ica, sirovi odgovori), za provjeru na stvarnoj ploči.
+
 ## v1.7.1
 - Tipkovnica: ako ipak odbije neki paket boja (greška 0x02), sve se boje odmah ponovno pošalju, pa nijedna tipka ne ostane neosvježena.
 - Miš: dok spava, u log se zapisuje samo prvi neuspjeli pokušaj preuzimanja kontrole, a ne svaki.

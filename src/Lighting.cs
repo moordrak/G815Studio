@@ -8,7 +8,7 @@ namespace G815Studio;
 public sealed class LightKey
 {
     public string Id;
-    public byte Zone;
+    public int Zone;
     public float UX, UY;   // središte u jedinicama tipki
     public float NX, NY;   // normalizirano 0..1
 }
@@ -63,9 +63,28 @@ public sealed class EffectRenderer : IDisposable
         var c2 = ColorUtil.Parse(ep.Color2, Color.Red);
         var bg = ColorUtil.Parse(ep.Background, Color.Black);
         double speed = Math.Clamp(ep.Speed, 1, 100) / 50.0;    // 0.02 .. 2
-        // "duga" ili vlastite boje: h ide 0..1 kroz Boju 1 → Boju 2 → natrag
-        Color Pal(double h) => ep.Rainbow ? ColorUtil.Hsv(h, 1, 1)
-            : ColorUtil.Lerp(c1, c2, 0.5 - 0.5 * Math.Cos(2 * Math.PI * (h - Math.Floor(h))));
+        // do četiri vlastite boje (Boja 3 i 4 su neobavezne)
+        var stops = new List<Color> { c1, c2 };
+        if (!string.IsNullOrEmpty(ep.Color3)) stops.Add(ColorUtil.Parse(ep.Color3, c2));
+        if (!string.IsNullOrEmpty(ep.Color4)) stops.Add(ColorUtil.Parse(ep.Color4, c2));
+        // gradijent 0..1: Boja 1 → Boja 2 (→ Boja 3 → Boja 4)
+        Color Grad(double k)
+        {
+            k = Math.Clamp(k, 0, 1) * (stops.Count - 1);
+            int a = Math.Min((int)k, stops.Count - 2);
+            return ColorUtil.Lerp(stops[a], stops[a + 1], k - a);
+        }
+        // "duga" ili vlastite boje: h ide 0..1 kroz sve boje i glatko natrag na Boju 1
+        Color Pal(double h)
+        {
+            if (ep.Rainbow) return ColorUtil.Hsv(h, 1, 1);
+            h -= Math.Floor(h);
+            if (stops.Count == 2) return ColorUtil.Lerp(c1, c2, 0.5 - 0.5 * Math.Cos(2 * Math.PI * h));
+            double k = h * stops.Count;
+            int a = (int)k % stops.Count;
+            double u = k - Math.Floor(k);
+            return ColorUtil.Lerp(stops[a], stops[(a + 1) % stops.Count], 0.5 - 0.5 * Math.Cos(Math.PI * u));
+        }
 
         if (cfg.Effect != EffectType.Audio) { _audio?.Dispose(); _audio = null; }
         if (!IsAudioEffect(cfg.Effect)) { _analyzer?.Dispose(); _analyzer = null; }
@@ -116,6 +135,7 @@ public sealed class EffectRenderer : IDisposable
                     {
                         1 => 1 - key.NX,
                         2 => key.NY * 0.35,
+                        4 => (1 - key.NY) * 0.35,
                         3 => Math.Sqrt(Math.Pow(key.NX - 0.5, 2) + Math.Pow((key.NY - 0.5) * 0.35, 2)),
                         _ => key.NX
                     };
@@ -181,7 +201,7 @@ public sealed class EffectRenderer : IDisposable
                     double lvl = Math.Min(1, (key.NX < 0.5 ? _lvlL : _lvlR) * 1.25);
                     int lit = (int)Math.Round(lvl * steps);
                     int step = Math.Min(steps - 1, (int)(d * steps));
-                    frame[key.Zone] = step < lit ? ColorUtil.Lerp(c1, c2, step / (double)(steps - 1)) : bg;
+                    frame[key.Zone] = step < lit ? Grad(step / (double)(steps - 1)) : bg;
                 }
                 break;
             }
@@ -201,7 +221,7 @@ public sealed class EffectRenderer : IDisposable
                     double h = 1 - key.NY;                       // 0 dolje, 1 gore
                     int row = Math.Clamp((int)(h * rows), 0, rows - 1);
                     int litRows = (int)Math.Round(_bandHold[band] * rows);
-                    frame[key.Zone] = row < litRows ? ColorUtil.Lerp(c1, c2, row / (double)(rows - 1)) : bg;
+                    frame[key.Zone] = row < litRows ? Grad(row / (double)(rows - 1)) : bg;
                 }
                 break;
             }
@@ -254,9 +274,9 @@ public sealed class EffectRenderer : IDisposable
             case EffectType.GradientWave:
                 foreach (var key in keys)
                 {
-                    double pos = ep.Direction switch { 1 => 1 - key.NX, 2 => key.NY, 3 => Math.Abs(key.NX - 0.5) * 2, _ => key.NX };
+                    double pos = ep.Direction switch { 1 => 1 - key.NX, 2 => key.NY, 4 => 1 - key.NY, 3 => Math.Abs(key.NX - 0.5) * 2, _ => key.NX };
                     double k = 0.5 + 0.5 * Math.Sin(2 * Math.PI * (pos - t * 0.25 * speed));
-                    frame[key.Zone] = ColorUtil.Lerp(c1, c2, k);
+                    frame[key.Zone] = Grad(k);
                 }
                 break;
 
@@ -338,12 +358,13 @@ public sealed class EffectRenderer : IDisposable
 
             case EffectType.Visor:
             {
-                // skener: svjetlosna traka putuje lijevo-desno i ostavlja trag
+                // skener: svjetlosna traka putuje lijevo-desno (ili gore-dolje) i ostavlja trag
                 double p = 0.5 - 0.5 * Math.Cos(t * 1.4 * speed);
                 double dir = Math.Sin(t * 1.4 * speed);
                 foreach (var key in keys)
                 {
-                    double d = key.NX - p;
+                    double q = ep.Direction switch { 1 => 1 - key.NX, 2 => key.NY, 4 => 1 - key.NY, 3 => Math.Abs(key.NX - 0.5) * 2, _ => key.NX };
+                    double d = q - p;
                     double k = Math.Abs(d) < 0.04 ? 1 : (Math.Sign(d) == -Math.Sign(dir) ? Math.Max(0, 1 - (Math.Abs(d) - 0.04) / 0.25) : Math.Max(0, 1 - (Math.Abs(d) - 0.04) / 0.05));
                     frame[key.Zone] = k >= 0.999 ? c1 : ColorUtil.Lerp(bg, c2, Math.Round(k * 10) / 10);
                 }
@@ -382,7 +403,7 @@ public sealed class EffectRenderer : IDisposable
                         _keyFrom[i] = ColorUtil.Lerp(_keyFrom[i], _keyTo[i], 1);
                         _keyTo[i] = ep.Rainbow
                             ? ColorUtil.Hsv(_rnd.NextDouble(), 0.85 + _rnd.NextDouble() * 0.15, 1)
-                            : ColorUtil.Lerp(c1, c2, _rnd.NextDouble());
+                            : Grad(_rnd.NextDouble());
                         _keyA[i] = t;
                         _keyB[i] = _rnd.NextDouble();
                     }
@@ -460,11 +481,12 @@ public sealed class LightingEngine : IDisposable
     private readonly EffectRenderer _renderer = new();
     private readonly object _lock = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
-    private readonly Color[] _frame = new Color[256];
+    private readonly Color[] _frame = new Color[KeyLayouts.ZoneCount];
     private readonly Color[] _sent = new Color[256];
     private readonly bool[] _sentValid = new bool[256];
     private readonly bool[] _everUsed = new bool[256];
-    private readonly Color[] _snapshot = new Color[256];
+    private long _settleAt;       // kad se slika smiri, u tom trenutku jednom ponovno pošalji sve tipke
+    private readonly Color[] _snapshot = new Color[KeyLayouts.ZoneCount];
     private Thread _thread;
     private volatile bool _stop;
 
@@ -520,32 +542,48 @@ public sealed class LightingEngine : IDisposable
     /// <summary>Miš koji prati efekt (null = nema). Zone miša se ne šalju tipkovnici.</summary>
     public LogitechMouse Mouse { get; set; }
     public volatile bool MouseFollow = true;
-    private readonly bool[] _mouseZone = new bool[256];
+    private readonly bool[] _mouseZone = new bool[KeyLayouts.ZoneCount];
     private int[] _mouseZones = Array.Empty<int>();
+
+    /// <summary>ASRock RGB kontroler (null = nema). Njegove zone (0x100+, po jedna za svaku LED-icu) se ne šalju tipkovnici.</summary>
+    public AsrockPolychrome Pc { get; set; }
+    /// <summary>Kingston Fury memorija (null = nema). Njene zone (0xC0–0xCF) se ne šalju tipkovnici.</summary>
+    public KingstonFury Ram { get; set; }
+    private int[] _ramZones = Array.Empty<int>();
+    public volatile bool PcFollow = true;
+    private int[] _pcZones = Array.Empty<int>();
+    /// <summary>Zone od ove naviše su virtualne (računalo, miš) i nikad ne idu tipkovnici.</summary>
+    public const int FirstVirtualZone = 0xE0;
 
     public void SetKeys(IEnumerable<KeyDef> defs)
     {
         var mz = defs.Where(k => k.Shape == "mouse").Select(k => (int)k.Zone).ToArray();
+        var pz = defs.Where(k => k.Shape == "pc").Select(k => (int)k.Zone).ToArray();
+        var rz = defs.Where(k => k.Shape == "ram").Select(k => (int)k.Zone).ToArray();
         lock (_lock)
         {
             Array.Clear(_mouseZone);
             foreach (int z in mz) _mouseZone[z] = true;
+            foreach (int z in pz) _mouseZone[z] = true;
+            foreach (int z in rz) _mouseZone[z] = true;
+            _ramZones = rz;
             _mouseZones = mz;
+            _pcZones = pz;
         }
         var list = defs.ToList();
-        float minX = list.Min(k => k.CenterX), minY = list.Min(k => k.CenterY);
-        float spanX = Math.Max(1, list.Max(k => k.CenterX) - minX);
-        float spanY = Math.Max(1, list.Max(k => k.CenterY) - minY);
+        float minX = list.Min(k => k.EffectX), minY = list.Min(k => k.EffectY);
+        float spanX = Math.Max(1, list.Max(k => k.EffectX) - minX);
+        float spanY = Math.Max(1, list.Max(k => k.EffectY) - minY);
         lock (_lock)
         {
             _keys = list.Select(k => new LightKey
             {
                 Id = k.Id,
                 Zone = k.Zone,
-                UX = k.CenterX,
-                UY = k.CenterY,
-                NX = (k.CenterX - minX) / spanX,
-                NY = (k.CenterY - minY) / spanY
+                UX = k.EffectX,
+                UY = k.EffectY,
+                NX = (k.EffectX - minX) / spanX,
+                NY = (k.EffectY - minY) / spanY
             }).ToArray();
             RebuildBase();
         }
@@ -605,7 +643,7 @@ public sealed class LightingEngine : IDisposable
             try
             {
                 int test = TestZone;
-                if (test >= 0 && test < 0xF0)
+                if (test >= 0 && test < FirstVirtualZone)
                 {
                     _frame[test] = Color.White;
                     _everUsed[test] = true;
@@ -620,11 +658,13 @@ public sealed class LightingEngine : IDisposable
                 LastError = ex.Message;
             }
 
-            lock (_snapshot) Array.Copy(_frame, _snapshot, 256);
+            lock (_snapshot) Array.Copy(_frame, _snapshot, _frame.Length);
 
             if (_kb.TakeResendRequest()) ForceResend();
             if (_kb.IsConnected) Send(keys);
             PushMouse();
+            PushPc();
+            PushRam();
             UpdateStats();
 
             int fps = Math.Clamp(Fps, 5, 60);
@@ -646,15 +686,51 @@ public sealed class LightingEngine : IDisposable
         m.SetColors(cols);
     }
 
+    private void PushRam()
+    {
+        var ram = Ram;
+        if (ram == null || !ram.IsConnected) return;
+        int[] zones;
+        lock (_lock) zones = _ramZones;
+        if (zones.Length == 0) return;
+        var cols = new Color[zones.Length];
+        for (int i = 0; i < zones.Length; i++) cols[i] = _frame[zones[i]];
+        ram.SetSegmentColors(cols, KeyLayouts.RamSegments);
+    }
+
+    private void PushPc()
+    {
+        var pc = Pc;
+        if (pc == null || !PcFollow || !pc.IsConnected) return;
+        int[] zones;
+        lock (_lock) zones = _pcZones;
+        if (zones.Length == 0) return;
+        var cols = new Color[zones.Length];
+        for (int i = 0; i < zones.Length; i++) cols[i] = _frame[zones[i]];
+        pc.SetSegmentColors(cols);
+    }
+
     private void Send(LightKey[] keys)
     {
-        // zone 0xF0+ su virtualne zone miša i nikad ne idu tipkovnici
-        foreach (var k in keys) if (!_mouseZone[k.Zone] && k.Zone < 0xF0) _everUsed[k.Zone] = true;
-        for (int z = 0xF0; z < 256; z++) _everUsed[z] = false;
+        // zone 0xE0+ su virtualne zone računala i miša i nikad ne idu tipkovnici
+        foreach (var k in keys) if (!_mouseZone[k.Zone] && k.Zone < FirstVirtualZone) _everUsed[k.Zone] = true;
+        for (int z = FirstVirtualZone; z < 256; z++) _everUsed[z] = false;
+        // zone koje tipkovnica stalno odbija (npr. ostale od ispitivača zona) više se ne šalju
+        for (int z = 1; z < FirstVirtualZone; z++) if (_everUsed[z] && _kb.IsBadZone((byte)z)) _everUsed[z] = false;
 
         var changes = new List<(byte Zone, Color Color)>();
         lock (_sentValid)
         {
+            // tipke iz paketa koje je tipkovnica odbila šalju se ponovno
+            foreach (byte z in _kb.TakeRejectedZones()) _sentValid[z] = false;
+            // sigurnosna mreža: kad se slika smiri (npr. Isključeno ili statične boje), jednom se ponovno pošalju
+            // sve tipke, pa nijedna ne ostane u staroj boji ako se neki paket izgubio
+            long now = _clock.ElapsedMilliseconds;
+            if (_settleAt > 0 && now >= _settleAt)
+            {
+                _settleAt = 0;
+                Array.Clear(_sentValid);
+            }
             for (int z = 0; z < 256; z++)
             {
                 if (!_everUsed[z]) continue;
@@ -664,13 +740,14 @@ public sealed class LightingEngine : IDisposable
             }
         }
         if (changes.Count == 0) return;
+        _settleAt = _clock.ElapsedMilliseconds + 400;
 
         long t0 = _clock.ElapsedTicks;
         try
         {
             // punilo za male pakete: druge tipke s bojom iz ovog okvira (one se ionako ne mijenjaju)
             var current = new List<(byte Zone, Color Color)>();
-            for (int z = 1; z < 0xF0; z++)
+            for (int z = 1; z < FirstVirtualZone; z++)
                 if (_everUsed[z]) current.Add(((byte)z, Color.FromArgb(255, _frame[z].R, _frame[z].G, _frame[z].B)));
             _kb.SendColors(changes, current);
             _framesThisSecond++;
@@ -731,6 +808,16 @@ public sealed class LightingEngine : IDisposable
         _stop = true;
         _thread?.Join(1000);
         _renderer.Dispose();
+    }
+
+    /// <summary>Nakon zaustavljanja petlje: pošalji crnu svim tipkama koje je program ikad osvijetlio.</summary>
+    public void BlackOut()
+    {
+        LightKey[] keys;
+        lock (_lock) keys = _keys;
+        Array.Clear(_frame);
+        ForceResend();
+        if (_kb.IsConnected && keys != null) Send(keys);
     }
 }
 

@@ -21,6 +21,13 @@ public sealed class AppController : IDisposable
     public G815Keyboard Keyboard { get; } = new();
     public LogitechMouse Mouse { get; } = new();
     private bool _mouseConnecting;
+    public AsrockPolychrome Pc { get; } = new();
+    public KingstonFury Ram { get; } = new();
+    private bool _ramConnecting;
+    private int _ramInLayout = -1;
+    private bool _pcConnecting;
+    private int _pcTicks;
+    private string _pcLayoutKey = "";
     private int _mouseZonesInLayout = -1;
     public LightingEngine Engine { get; }
     public KeyboardHook Hook { get; } = new();
@@ -47,7 +54,10 @@ public sealed class AppController : IDisposable
     {
         _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         Settings = SettingsStore.Load();
-        Engine = new LightingEngine(Keyboard) { Fps = Settings.Fps, Mouse = Mouse };
+        Engine = new LightingEngine(Keyboard) { Fps = Settings.Fps, Mouse = Mouse, Pc = Pc, Ram = Ram };
+        Ram.Changed += () => _ui.Post(_ => OnRamChanged(), null);
+        Pc.SwapRG = Settings.PcSwapRG;
+        Pc.Changed += () => _ui.Post(_ => OnPcChanged(), null);
         Mouse.HostMode = Settings.MouseHostMode;
         Mouse.Changed += () => _ui.Post(_ => OnMouseChanged(), null);
         Recorder = new MacroRecorder(Hook);
@@ -72,7 +82,7 @@ public sealed class AppController : IDisposable
         Engine.Start();
 
         _connectTimer = new System.Windows.Forms.Timer { Interval = 3000 };
-        _connectTimer.Tick += (_, _) => { TryConnect(); TryConnectMouse(); };
+        _connectTimer.Tick += (_, _) => { TryConnect(); TryConnectMouse(); TryConnectPc(); };
         _connectTimer.Start();
 
         _watchTimer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -84,6 +94,8 @@ public sealed class AppController : IDisposable
 
         TryConnect();
         TryConnectMouse();
+        TryConnectPc();
+        TryConnectRam();
     }
 
     // ------------------------------------------------------------ spajanje
@@ -131,11 +143,21 @@ public sealed class AppController : IDisposable
 
     // ------------------------------------------------------------ profili
 
+    /// <summary>Samo za snimke zaslona: nacrtaj miša s ovoliko LED-ica i kad miš nije spojen.</summary>
+    public int PreviewMouseZones { get; set; }
+
+    private int MouseZonesForLayout() =>
+        Settings.MouseEnabled && Mouse.IsConnected ? Mouse.ClusterCount : PreviewMouseZones;
+
     public void RebuildKeys()
     {
-        int mz = Settings.MouseEnabled && Mouse.IsConnected ? Mouse.ClusterCount : 0;
+        int mz = MouseZonesForLayout();
         _mouseZonesInLayout = mz;
-        Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides, mz);
+        var pc = PcChannelsForLayout();
+        _pcLayoutKey = PcLayoutKey(pc);
+        int ram = Settings.RamEnabled && Ram.IsConnected ? Ram.StickCount : PreviewRamSticks;
+        _ramInLayout = ram;
+        Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides, mz, pc, ram, Settings.Placements);
         Engine.SetKeys(Keys);
         StateChanged?.Invoke();
     }
@@ -145,6 +167,7 @@ public sealed class AppController : IDisposable
         EffectiveProfile = p;
         Engine.SetConfig(SettingsStore.Clone(p.Lighting));
         UpdateHook();
+        ApplySolidModes();
         StateChanged?.Invoke();
     }
 
@@ -163,8 +186,25 @@ public sealed class AppController : IDisposable
         {
             Engine.SetConfig(SettingsStore.Clone(p.Lighting));
             UpdateHook();
+            ApplySolidModes();
         }
         SaveSoon();
+    }
+
+    /// <summary>Sve ugašeno: „Ugasi osvjetljenje“ u traci ili efekt Isključeno (gasi i miš i računalo u načinu jedne boje).</summary>
+    public bool AllDark => Engine.LightsOff || EffectiveProfile?.Lighting?.Effect == EffectType.Off;
+
+    public void SetLightsOff(bool off)
+    {
+        Engine.LightsOff = off;
+        Engine.ForceResend();
+        ApplySolidModes();
+    }
+
+    private void ApplySolidModes()
+    {
+        if (Mouse != null) ApplyMouseMode();
+        if (Pc != null) ApplyPcMode();
     }
 
     public void ProfilesChanged()
@@ -375,15 +415,144 @@ public sealed class AppController : IDisposable
     {
         Engine.MouseFollow = Settings.MouseFollow;
         if (Settings.MouseEnabled && !Settings.MouseFollow && Mouse.IsConnected)
-            Mouse.SetColors(new[] { Engine.LightsOff ? Color.Black : ColorUtil.Parse(Settings.MouseColor) });
+            Mouse.SetColors(new[] { AllDark ? Color.Black : ColorUtil.Parse(Settings.MouseColor) });
     }
 
     private void OnMouseChanged()
     {
-        int mz = Settings.MouseEnabled && Mouse.IsConnected ? Mouse.ClusterCount : 0;
+        int mz = MouseZonesForLayout();
         if (mz != _mouseZonesInLayout) RebuildKeys();
         ApplyMouseMode();
         if (Mouse.IsConnected) Notify?.Invoke("Miš spojen: " + Mouse.Name);
+        StateChanged?.Invoke();
+    }
+
+    // ------------------------------------------------------------ računalo (ASRock RGB)
+
+    /// <summary>Samo za snimke zaslona: nacrtaj izlaze računala i kad kontroler nije spojen.</summary>
+    public List<PcChannelLayout> PreviewPcChannels { get; set; }
+
+    private List<PcChannelLayout> PcChannelsForLayout() =>
+        Settings.PcEnabled && Pc.IsConnected
+            ? Pc.Channels.Where(c => c.Segments > 0).Select(c => new PcChannelLayout(PcDeviceId(c.ZoneType), c.Name, c.Segments)).ToList()
+            : PreviewPcChannels;
+
+    public static string PcDeviceId(byte zoneType) => "pc:" + zoneType;
+
+    private static string PcLayoutKey(List<PcChannelLayout> pc) =>
+        pc == null ? "" : string.Join("|", pc.Select(c => c.Id + ":" + c.Leds));
+
+    // ------------------------------------------------------------ raspored uređaja na slici
+
+    public DevicePlacement GetPlacement(string device)
+    {
+        if (!Settings.Placements.TryGetValue(device, out var p) || p == null)
+            Settings.Placements[device] = p = new DevicePlacement();
+        return p;
+    }
+
+    /// <summary>Uređaj je premješten na slici (gornji lijevi kut, u jedinicama tipki).</summary>
+    public void MoveDevice(string device, float x, float y)
+    {
+        var p = GetPlacement(device);
+        p.X = (float)Math.Round(x, 2);
+        p.Y = (float)Math.Round(y, 2);
+        PlacementChanged();
+    }
+
+    /// <summary>Pozvati nakon promjene oblika, smjera ili veličine uređaja.</summary>
+    public void PlacementChanged()
+    {
+        SaveSoon();
+        RebuildKeys();
+    }
+
+    public void ResetPlacements()
+    {
+        Settings.Placements.Clear();
+        PlacementChanged();
+    }
+
+    public void TryConnectPc()
+    {
+        if (!Settings.PcEnabled || Pc.IsConnected || _pcConnecting || _disposed) return;
+        if (_pcTicks++ % 5 != 0) return;        // svakih ~15 s
+        _pcConnecting = true;
+        Task.Run(() => Pc.TryConnect()).ContinueWith(_ => _ui.Post(__ => { _pcConnecting = false; StateChanged?.Invoke(); }, null));
+    }
+
+    /// <summary>Pozvati nakon promjene postavki računala.</summary>
+    public void PcSettingsChanged()
+    {
+        Pc.SwapRG = Settings.PcSwapRG;
+        if (!Settings.PcEnabled) Task.Run(() => Pc.Release());
+        else
+        {
+            _pcTicks = 0;
+            TryConnectPc();
+        }
+        ApplyPcMode();
+        SaveSoon();
+        StateChanged?.Invoke();
+    }
+
+    public void SetPcLedCount(byte zoneType, int count) => Task.Run(() => Pc.SetLedCount(zoneType, count));
+
+    private void ApplyPcMode()
+    {
+        Engine.PcFollow = Settings.PcFollow;
+        if (Settings.PcEnabled && !Settings.PcFollow && Pc.IsConnected)
+        {
+            var c = AllDark ? Color.Black : ColorUtil.Parse(Settings.PcColor);
+            Pc.SetSegmentColors(Enumerable.Repeat(c, Math.Max(1, Pc.TotalSegments)).ToArray());
+        }
+    }
+
+    private void OnPcChanged()
+    {
+        if (_disposed) return;
+        if (PcLayoutKey(PcChannelsForLayout()) != _pcLayoutKey) RebuildKeys();
+        ApplyPcMode();
+        if (Pc.IsConnected) Notify?.Invoke("Računalo spojeno: " + Pc.Name);
+        StateChanged?.Invoke();
+    }
+
+    // ------------------------------------------------------------ memorija (Kingston Fury)
+
+    /// <summary>Samo za snimke zaslona: nacrtaj module memorije i kad nisu spojeni.</summary>
+    public int PreviewRamSticks { get; set; }
+
+    /// <summary>Spajanje memorije: jednom pri pokretanju i kad se opcija uključi (SMBus se ne pretražuje stalno).</summary>
+    public void TryConnectRam()
+    {
+        if (!Settings.RamEnabled || Ram.IsConnected || _ramConnecting || _disposed) return;
+        if (!PawnIoHost.IsElevated)
+        {
+            StateChanged?.Invoke();
+            return;
+        }
+        _ramConnecting = true;
+        Task.Run(() => Ram.TryConnect()).ContinueWith(_ => _ui.Post(__ => { _ramConnecting = false; StateChanged?.Invoke(); }, null));
+    }
+
+    public string RamStatus =>
+        !Settings.RamEnabled ? "Isključeno." :
+        !PawnIoHost.IsElevated ? "Za memoriju program mora raditi kao administrator." :
+        _ramConnecting ? "Spajam…" : Ram.Status;
+
+    public void RamSettingsChanged()
+    {
+        if (!Settings.RamEnabled) Task.Run(() => Ram.Release());
+        else TryConnectRam();
+        SaveSoon();
+        StateChanged?.Invoke();
+    }
+
+    private void OnRamChanged()
+    {
+        if (_disposed) return;
+        int ram = Settings.RamEnabled && Ram.IsConnected ? Ram.StickCount : PreviewRamSticks;
+        if (ram != _ramInLayout) RebuildKeys();
         StateChanged?.Invoke();
     }
 
@@ -398,8 +567,13 @@ public sealed class AppController : IDisposable
         if (Recorder.IsRecording) Recorder.Stop();
         Hook.Dispose();
         Engine.Dispose();
-        Keyboard.Release();
-        Mouse.Release();
+        bool dark = Settings.LightsOffOnExit;
+        if (dark) Engine.BlackOut();
+        Keyboard.Release(dark);
+        Mouse.Release(dark);
+        Pc.Release(dark);
+        Ram.Release(dark);
+        PawnIoHost.RemoveIfOurs();
         SettingsStore.Save(Settings);
     }
 }

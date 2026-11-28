@@ -5,19 +5,38 @@ public sealed class KeyDef
     public string Id { get; init; }      // "U04" (HID usage), "G1".."G5", "LOGO"
     public string Label { get; init; }
     public int Usage { get; init; }
-    public byte DefaultZone { get; init; }
-    public byte Zone { get; set; }       // stvarna zona (nakon korisničkih izmjena)
-    public float X { get; init; }
-    public float Y { get; init; }
+    public int DefaultZone { get; init; }
+    public int Zone { get; set; }       // stvarna zona (nakon korisničkih izmjena)
+    public float X { get; set; }
+    public float Y { get; set; }
     public float W { get; init; } = 1;
     public float H { get; init; } = 1;
     public string Group { get; init; }
     public string Shape { get; init; }   // null = pravokutnik, "isoEnter" = Enter sa zubom ulijevo, "round" = okrugla tipka, "logo"
 
+    // uređaji izvan tipkovnice (miš, memorija, izlazi računala): okvir uređaja na slici, u jedinicama tipki
+    public string Device { get; init; }     // null = tipkovnica; "mouse", "ram", "pc:<izlaz>"
+    public string DeviceName { get; init; }
+    public float DevX { get; set; }
+    public float DevY { get; set; }
+    public float DevW { get; init; }
+    public float DevH { get; init; }
+    public string DevShape { get; init; }   // "line" ili "ring" (izlazi računala)
+    public bool DevVertical { get; init; }
+
+    // točka po kojoj efekt boji LED-icu (zrcaljenje); null = njezino stvarno mjesto na slici
+    public float? SampleX { get; set; }
+    public float? SampleY { get; set; }
+
     public float CenterX => X + W / 2;
+    public float EffectX => SampleX ?? CenterX;
+    public float EffectY => SampleY ?? CenterY;
     public float CenterY => Y + H / 2;
     public override string ToString() => $"{Label}  [{Id}, zona 0x{Zone:X2}]";
 }
+
+/// <summary>Izlaz računala kako ga crta slika: id uređaja ("pc:&lt;izlaz&gt;"), naziv i broj LED-ica.</summary>
+public readonly record struct PcChannelLayout(string Id, string Name, int Leds);
 
 public static class KeyLayouts
 {
@@ -28,8 +47,43 @@ public static class KeyLayouts
     public static byte ZoneFromUsage(int usage) =>
         usage >= 0xE0 && usage <= 0xE7 ? (byte)(usage - 0x78) : (byte)(usage - 0x03);
 
-    public static List<KeyDef> Build(bool iso, IDictionary<string, int> overrides, int mouseZones = 0)
+    // Miš na slici, u jedinicama tipki (isti koordinatni sustav kao tipke): okvir tijela i luk LED-ica.
+    public const float MouseX = 25.4f, MouseY = 1.15f, MouseW = 3.8f, MouseH = 7.0f;
+    public const float MouseLedSize = 0.42f;
+
+    /// <summary>Središte i-te LED-ice miša: luk preko stražnjeg dijela, slijeva nadesno.</summary>
+    public static (float X, float Y) MouseLed(int i, int count, float ox = MouseX, float oy = MouseY)
     {
+        double t = count <= 1 ? 0.5 : (double)i / (count - 1);
+        double a = (160 - 140 * t) * Math.PI / 180;       // 160° (lijevo) → 20° (desno), kroz dno luka
+        float cx = ox + MouseW * 0.52f, cy = oy + MouseH * 0.6f;
+        return ((float)(cx + Math.Cos(a) * 1.3), (float)(cy + Math.Sin(a) * 0.95));
+    }
+
+    // Računalo (ASRock RGB): trake ispod tipkovnice, jedna po izlazu. Svaka stvarna LED-ica ima svoju virtualnu
+    // zonu od 0x100 naviše (izvan raspona tipkovnice), pa efekti teku glatko duž ARGB traka.
+    public const int PcZoneBase = 0x100;
+    public const int PcMaxLeds = 0x200;
+    /// <summary>Ukupan broj zona u okviru efekata (tipkovnica 0–0xFF + LED-ice računala).</summary>
+    public const int ZoneCount = PcZoneBase + PcMaxLeds;
+    public const float PcY = 9.3f, PcRowH = 0.85f, PcX = 1.5f, PcW = 22.5f;
+
+    // Memorija (Kingston Fury): okomiti moduli ispod miša; virtualne zone 0xC0–0xCF (po modulu RamSegments zona, odozdo)
+    public const byte RamZoneBase = 0xC0;
+    public const int RamSegments = 4;
+    public const float RamX = 25.9f, RamY = 9.3f, RamH = 3.4f, RamW = 0.55f, RamGap = 0.95f;
+
+    public const float PcThick = 0.7f;
+
+    /// <summary>Zadana duljina trake ili promjer kruga za izlaz s toliko LED-ica.</summary>
+    public static float DefaultPcSize(string shape, int leds) =>
+        shape == "ring" ? Math.Clamp(1.6f + leds * 0.15f, 2.2f, 5f) : leds <= 1 ? 1.5f : Math.Clamp(leds * 0.6f, 2.5f, PcW);
+
+    public static List<KeyDef> Build(bool iso, IDictionary<string, int> overrides, int mouseZones = 0,
+                                     IReadOnlyList<PcChannelLayout> pcChannels = null, int ramSticks = 0,
+                                     IReadOnlyDictionary<string, DevicePlacement> placements = null)
+    {
+        DevicePlacement Place(string id) => placements != null && placements.TryGetValue(id, out var p) && p != null ? p : null;
         var keys = new List<KeyDef>();
         const float ox = 1.5f, oy = 1.5f;   // oy: gornja traka s okruglim tipkama, kotačićem i logom
 
@@ -170,24 +224,126 @@ public static class KeyLayouts
         R("MEDIA_NEXT", "Sljedeća", 0x9D, 20.5f, oy, "media");
         R("MEDIA_MUTE", "Utišaj", 0x9C, 21.5f, oy, "media");
 
-        // Zone miša: virtualne tipke desno od numeričke tipkovnice, pa efekti (val, vatra…) "prelaze" i na miš.
-        // Ne crtaju se na slici i ne šalju se tipkovnici (zone 0xF0+).
-        for (int i = 0; i < mouseZones && i < 16; i++)
+        // Zone miša: LED-ice nacrtanog miša (traka u luku preko stražnjeg dijela), pa efekti (val, vatra…)
+        // "prelaze" i na miš. Ne šalju se tipkovnici (zone 0xF0+). Miš se može premjestiti po slici.
+        int n = Math.Min(mouseZones, 16);
+        var mp = Place("mouse");
+        float mx = mp?.X ?? MouseX, my = mp?.Y ?? MouseY;
+        for (int i = 0; i < n; i++)
         {
-            byte z = (byte)(0xF0 + i);
+            int z = 0xF0 + i;
+            var (cx, cy) = MouseLed(mp?.Reverse == true ? n - 1 - i : i, n, mx, my);
             keys.Add(new KeyDef
             {
                 Id = "MOUSE" + i, Label = "Miš " + (i + 1), DefaultZone = z, Zone = z,
-                // LED-ice miša složene u stupac desno od numeričke tipkovnice
-                X = ox + 23.5f, Y = oy + 0.25f + i * (6.0f / Math.Max(1, Math.Min(mouseZones, 16))), W = 1, H = 1, Group = "mouse", Shape = "mouse"
+                X = cx - MouseLedSize / 2, Y = cy - MouseLedSize / 2, W = MouseLedSize, H = MouseLedSize,
+                Group = "mouse", Shape = "mouse",
+                Device = "mouse", DeviceName = "Miš", DevX = mx, DevY = my, DevW = MouseW, DevH = MouseH
             });
+        }
+
+        // Izlazi ASRock kontrolera: svaki izlaz je traka ili krug sa svim svojim LED-icama. Zone idu redom stvarnih
+        // LED-ica (tako ih kontroler i prima), a položaj na slici ovisi o obliku, smjeru i mjestu uređaja.
+        if (pcChannels != null)
+        {
+            int zi = 0;
+            float nextY = PcY;
+            foreach (var ch in pcChannels)
+            {
+                int leds = Math.Min(ch.Leds, PcMaxLeds - zi);
+                if (leds <= 0) continue;
+                var p = Place(ch.Id);
+                string shape = p?.Shape == "ring" ? "ring" : "line";
+                bool vertical = shape == "line" && p?.Vertical == true;
+                bool reverse = p?.Reverse == true;
+                float size = p != null && p.Size > 0 ? p.Size : DefaultPcSize(shape, leds);
+                float dw = shape == "ring" ? size : vertical ? PcThick : size;
+                float dh = shape == "ring" ? size : vertical ? size : PcThick;
+                float dx = p?.X ?? PcX, dy = p?.Y ?? nextY;
+                if (p?.Y == null) nextY = dy + dh + 0.55f;
+
+                for (int i = 0; i < leds; i++, zi++)
+                {
+                    int z = PcZoneBase + zi;
+                    int j = reverse ? leds - 1 - i : i;
+                    float cx, cy, w, h;
+                    if (shape == "ring")
+                    {
+                        float r = size / 2 - 0.3f;
+                        double a = -Math.PI / 2 + j * 2 * Math.PI / leds;
+                        cx = dx + size / 2 + (float)(Math.Cos(a) * r);
+                        cy = dy + size / 2 + (float)(Math.Sin(a) * r);
+                        w = h = Math.Clamp((float)(2 * Math.PI * r / leds) * 0.8f, 0.12f, 0.5f);
+                    }
+                    else
+                    {
+                        float len = size - PcThick;
+                        float along = leds == 1 ? size / 2 : PcThick / 2 + j * len / (leds - 1);
+                        float step = leds == 1 ? size : len / (leds - 1);
+                        float thin = Math.Clamp(step * 0.8f, 0.12f, 0.6f);
+                        if (vertical) { cx = dx + PcThick / 2; cy = dy + along; w = 0.5f; h = thin; }
+                        else { cx = dx + along; cy = dy + PcThick / 2; w = thin; h = 0.5f; }
+                    }
+                    // krug koji svijetli linearno: efekt ga zahvaća kao vodoravnu traku iste širine, redom LED-ica
+                    float? sx = null, sy = null;
+                    if (shape == "ring" && p?.Linear == true)
+                    {
+                        sx = dx + (j + 0.5f) / leds * size;
+                        sy = dy + size / 2;
+                    }
+                    keys.Add(new KeyDef
+                    {
+                        SampleX = sx, SampleY = sy,
+                        Id = "PC" + zi, Label = leds == 1 ? ch.Name : $"{ch.Name} · {i + 1}", DefaultZone = z, Zone = z,
+                        X = cx - w / 2, Y = cy - h / 2, W = w, H = h, Group = "pc", Shape = "pc",
+                        Device = ch.Id, DeviceName = ch.Name, DevX = dx, DevY = dy, DevW = dw, DevH = dh,
+                        DevShape = shape, DevVertical = vertical
+                    });
+                }
+            }
+        }
+
+        int sticks = Math.Min(ramSticks, 16 / RamSegments);
+        var rp = Place("ram");
+        float rx = rp?.X ?? RamX, ry = rp?.Y ?? RamY;
+        for (int s = 0; s < sticks; s++)
+        {
+            for (int i = 0; i < RamSegments; i++)
+            {
+                int z = RamZoneBase + s * RamSegments + i;
+                float segH = RamH / RamSegments;
+                int j = rp?.Reverse == true ? RamSegments - 1 - i : i;     // zadano odozdo prema gore
+                keys.Add(new KeyDef
+                {
+                    Id = $"RAM{s}_{i}", Label = $"RAM {s + 1} · {i + 1}", DefaultZone = z, Zone = z,
+                    X = rx + s * RamGap, Y = ry + RamH - (j + 1) * segH, W = RamW, H = segH,
+                    Group = "ram", Shape = "ram",
+                    Device = "ram", DeviceName = "RAM", DevX = rx, DevY = ry, DevW = (sticks - 1) * RamGap + RamW, DevH = RamH
+                });
+            }
+        }
+
+        // zrcaljenje: druga polovica uređaja boji se kao prva (simetrično oko sredine uređaja)
+        foreach (var dev in keys.Where(k => k.Device != null).GroupBy(k => k.Device))
+        {
+            if (Place(dev.Key)?.Mirror != true) continue;
+            var d0 = dev.First();
+            bool vertical = d0.Shape == "ram" || d0.DevVertical;
+            float mid = vertical ? d0.DevY + d0.DevH / 2 : d0.DevX + d0.DevW / 2;
+            foreach (var k in dev)
+            {
+                float ex = k.EffectX, ey = k.EffectY;
+                if (vertical ? ey <= mid : ex <= mid) continue;
+                k.SampleX = vertical ? ex : 2 * mid - ex;
+                k.SampleY = vertical ? 2 * mid - ey : ey;
+            }
         }
 
         if (overrides != null)
         {
             foreach (var k in keys)
-                if (overrides.TryGetValue(k.Id, out int z) && z >= 0 && z <= 255)
-                    k.Zone = (byte)z;
+                if (k.Shape != "pc" && overrides.TryGetValue(k.Id, out int z) && z >= 0 && z <= 255)
+                    k.Zone = z;
         }
         return keys;
     }
