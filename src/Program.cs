@@ -1,12 +1,12 @@
-namespace G815Studio;
+namespace Svitac;
 
 internal static class Program
 {
     [STAThread]
     private static void Main(string[] args)
     {
-        using var mutex = new Mutex(true, @"Local\G815Studio_SingleInstance", out bool created);
-        using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\G815Studio_Show");
+        using var mutex = new Mutex(true, @"Local\SVITAC_SingleInstance", out bool created);
+        using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\SVITAC_Show");
         if (!created && args.Any(a => a.Equals("--restart", StringComparison.OrdinalIgnoreCase)))
         {
             // ponovno pokretanje (npr. kao administrator): pričekaj da se stari primjerak zatvori
@@ -35,8 +35,11 @@ internal static class Program
             return;
         }
 
+        SettingsStore.MigrateFromG815Studio();
+        L.Init(SettingsStore.Load().Language);
+
         bool startHidden = args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
-        Log.Write("Pokretanje G815 Studio " + typeof(Program).Assembly.GetName().Version);
+        Log.Write("Pokretanje SVITAC " + typeof(Program).Assembly.GetName().Version);
 
         var ctx = new TrayContext(startHidden);
         var wait = ThreadPool.RegisterWaitForSingleObject(showEvent, (_, _) => ctx.PostShow(), null, -1, false);
@@ -51,8 +54,8 @@ internal static class Program
         Log.Write("NEOČEKIVANA GREŠKA: " + ex);
         try
         {
-            MessageBox.Show("Dogodila se greška:\n\n" + ex.Message + "\n\nDetalji su u log.txt (Postavke → Otvori mapu).",
-                "G815 Studio", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(L.T("Dogodila se greška:") + "\n\n" + ex.Message + "\n\n" + L.T("Detalji su u log.txt (Postavke → Otvori mapu)."),
+                "SVITAC", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         catch
         {

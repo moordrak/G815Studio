@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>
 /// Prati jesu li monitori upaljeni (GUID_CONSOLE_DISPLAY_STATE). Windows šalje poruku kad se zasloni ugase zbog
@@ -41,7 +41,7 @@ public sealed class DisplayPowerWatcher : NativeWindow, IDisposable
     {
         try
         {
-            CreateHandle(new CreateParams { Caption = "G815Studio.DisplayPower" });
+            CreateHandle(new CreateParams { Caption = "SVITAC.DisplayPower" });
             _registration = RegisterPowerSettingNotification(Handle, ref GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE);
             if (_registration == IntPtr.Zero)
                 Log.Write("Praćenje monitora nije uspjelo (greška " + Marshal.GetLastWin32Error() + ").");

@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace G815Studio;
+namespace Svitac;
 
 internal static class Ui
 {
@@ -86,8 +86,8 @@ internal sealed class PromptDialog : DarkDialog
             Multiline = multiline, AcceptsReturn = multiline, ScrollBars = multiline ? ScrollBars.Vertical : ScrollBars.None,
             Height = multiline ? 170 : 24
         };
-        var ok = new Button { Text = "U redu", DialogResult = DialogResult.OK, Width = 90, Left = 222, Top = ClientSize.Height - 38 };
-        var cancel = new Button { Text = "Odustani", DialogResult = DialogResult.Cancel, Width = 90, Left = 318, Top = ClientSize.Height - 38 };
+        var ok = new Button { Text = L.T("U redu"), DialogResult = DialogResult.OK, Width = 90, Left = 222, Top = ClientSize.Height - 38 };
+        var cancel = new Button { Text = L.T("Odustani"), DialogResult = DialogResult.Cancel, Width = 90, Left = 318, Top = ClientSize.Height - 38 };
         Controls.AddRange(new Control[] { lbl, _box, ok, cancel });
         AcceptButton = multiline ? null : ok;
         CancelButton = cancel;
@@ -122,7 +122,7 @@ internal sealed class KeyCaptureDialog : DarkDialog
 
     public KeyCaptureDialog()
     {
-        Text = "Dodaj tipku";
+        Text = L.T("Dodaj tipku");
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;
         MinimizeBox = MaximizeBox = false;
@@ -132,10 +132,10 @@ internal sealed class KeyCaptureDialog : DarkDialog
         Font = SystemFonts.MessageBoxFont;
         _info = new Label
         {
-            Text = "Pritisni tipku ili kombinaciju tipki…\n(samo modifikator: pritisni ga i otpusti)",
+            Text = L.T("Pritisni tipku ili kombinaciju tipki…\n(samo modifikator: pritisni ga i otpusti)"),
             Dock = DockStyle.Top, Height = 70, TextAlign = ContentAlignment.MiddleCenter
         };
-        var cancel = new Button { Text = "Odustani", DialogResult = DialogResult.Cancel, Width = 100, Left = 140, Top = 80, TabStop = false };
+        var cancel = new Button { Text = L.T("Odustani"), DialogResult = DialogResult.Cancel, Width = 100, Left = 140, Top = 80, TabStop = false };
         Controls.Add(cancel);
         Controls.Add(_info);
     }
@@ -178,7 +178,7 @@ internal sealed class ProcessPickerDialog : DarkDialog
 
     public ProcessPickerDialog()
     {
-        Text = "Odaberi aplikaciju";
+        Text = L.T("Odaberi aplikaciju");
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(480, 420);
         MinimizeBox = MaximizeBox = false;
@@ -187,8 +187,8 @@ internal sealed class ProcessPickerDialog : DarkDialog
 
         _list = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false };
         var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 40, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(6) };
-        var ok = new Button { Text = "Dodaj", DialogResult = DialogResult.OK, Width = 90 };
-        var cancel = new Button { Text = "Odustani", DialogResult = DialogResult.Cancel, Width = 90 };
+        var ok = new Button { Text = L.T("Dodaj"), DialogResult = DialogResult.OK, Width = 90 };
+        var cancel = new Button { Text = L.T("Odustani"), DialogResult = DialogResult.Cancel, Width = 90 };
         bottom.Controls.Add(cancel);
         bottom.Controls.Add(ok);
         Controls.Add(_list);
@@ -230,7 +230,7 @@ internal sealed class HttpStepDialog : DarkDialog
 
     public HttpStepDialog(MacroStep step)
     {
-        Text = "HTTP poziv";
+        Text = L.T("HTTP poziv");
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;
         MinimizeBox = MaximizeBox = false;
@@ -241,7 +241,7 @@ internal sealed class HttpStepDialog : DarkDialog
         var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(14) };
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        Label L(string text) => new() { Text = text, AutoSize = true, Margin = new Padding(3, 9, 3, 3) };
+        Label Lb(string text) => new() { Text = text, AutoSize = true, Margin = new Padding(3, 9, 3, 3) };
 
         _method = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
         _method.Items.AddRange(new object[] { "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD" });
@@ -253,30 +253,28 @@ internal sealed class HttpStepDialog : DarkDialog
         _headers = new TextBox { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 80, Text = (step.Headers ?? "").Replace("\r\n", "\n").Replace("\n", "\r\n") };
         _body = new TextBox { Dock = DockStyle.Fill, Multiline = true, AcceptsReturn = true, AcceptsTab = true, ScrollBars = ScrollBars.Vertical, Height = 150, Font = new Font("Consolas", 10f), Text = (step.Body ?? "").Replace("\r\n", "\n").Replace("\n", "\r\n") };
         _timeout = new NumericUpDown { Minimum = 1, Maximum = 120, Value = Math.Clamp(step.TimeoutMs / 1000, 1, 120), Width = 80 };
-        _show = new CheckBox { Text = "Prikaži rezultat u obavijesti", AutoSize = true, Checked = step.ShowResult };
+        _show = new CheckBox { Text = L.T("Prikaži rezultat u obavijesti"), AutoSize = true, Checked = step.ShowResult };
 
-        t.Controls.Add(L("Metoda"), 0, 0); t.Controls.Add(_method, 1, 0);
-        t.Controls.Add(L("URL"), 0, 1); t.Controls.Add(_url, 1, 1);
-        t.Controls.Add(L("Content-Type"), 0, 2); t.Controls.Add(_type, 1, 2);
-        t.Controls.Add(L("Zaglavlja"), 0, 3); t.Controls.Add(_headers, 1, 3);
-        t.Controls.Add(L("Tijelo"), 0, 4); t.Controls.Add(_body, 1, 4);
+        t.Controls.Add(Lb(L.T("Metoda")), 0, 0); t.Controls.Add(_method, 1, 0);
+        t.Controls.Add(Lb("URL"), 0, 1); t.Controls.Add(_url, 1, 1);
+        t.Controls.Add(Lb("Content-Type"), 0, 2); t.Controls.Add(_type, 1, 2);
+        t.Controls.Add(Lb(L.T("Zaglavlja")), 0, 3); t.Controls.Add(_headers, 1, 3);
+        t.Controls.Add(Lb(L.T("Tijelo")), 0, 4); t.Controls.Add(_body, 1, 4);
         var tr = new FlowLayoutPanel { AutoSize = true };
         tr.Controls.Add(_timeout);
-        tr.Controls.Add(new Label { Text = "sekundi", AutoSize = true, Margin = new Padding(6, 8, 20, 0) });
+        tr.Controls.Add(new Label { Text = L.T("sekundi"), AutoSize = true, Margin = new Padding(6, 8, 20, 0) });
         tr.Controls.Add(_show);
-        t.Controls.Add(L("Čekaj najviše"), 0, 5); t.Controls.Add(tr, 1, 5);
+        t.Controls.Add(Lb(L.T("Čekaj najviše")), 0, 5); t.Controls.Add(tr, 1, 5);
         var help = new Label
         {
             AutoSize = true, MaximumSize = new Size(460, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 8, 3, 3),
-            Text = "Zaglavlja: jedno po retku, npr. \"Authorization: Bearer …\". U URL-u, zaglavljima i tijelu možeš koristiti " +
-                   "{naziv} iz koraka \"Unos vrijednosti\", {naziv:url} za kodiranu vrijednost, te {datum}, {vrijeme} i {clipboard}. " +
-                   "Nakon poziva su dostupni {status} i {odgovor}."
+            Text = L.T("Zaglavlja: jedno po retku, npr. \"Authorization: Bearer …\". U URL-u, zaglavljima i tijelu možeš koristiti {naziv} iz koraka \"Unos vrijednosti\", {naziv:url} za kodiranu vrijednost, te {datum}, {vrijeme} i {clipboard}. Nakon poziva su dostupni {status} i {odgovor}.")
         };
         t.Controls.Add(help, 1, 6);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 52, Padding = new Padding(10) };
         var ok = new Button { Text = "U redu", DialogResult = DialogResult.OK, Width = 100, Tag = "primary" };
-        var cancel = new Button { Text = "Odustani", DialogResult = DialogResult.Cancel, Width = 100 };
+        var cancel = new Button { Text = L.T("Odustani"), DialogResult = DialogResult.Cancel, Width = 100 };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(ok);
         Controls.Add(t);
@@ -286,7 +284,7 @@ internal sealed class HttpStepDialog : DarkDialog
         {
             if (!Uri.TryCreate(_url.Text.Trim().Replace("{", "x").Replace("}", "x"), UriKind.Absolute, out var u) || (u.Scheme != "http" && u.Scheme != "https"))
             {
-                MessageBox.Show(this, "Upiši ispravan URL koji počinje s http:// ili https://", "HTTP poziv", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, L.T("Upiši ispravan URL koji počinje s http:// ili https://"), L.T("HTTP poziv"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 DialogResult = DialogResult.None;
                 return;
             }
@@ -306,7 +304,7 @@ internal sealed class InputStepDialog : DarkDialog
 {
     public InputStepDialog(MacroStep step)
     {
-        Text = "Unos vrijednosti";
+        Text = L.T("Unos vrijednosti");
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;
         MinimizeBox = MaximizeBox = false;
@@ -317,23 +315,22 @@ internal sealed class InputStepDialog : DarkDialog
         var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(14) };
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        Label L(string text) => new() { Text = text, AutoSize = true, Margin = new Padding(3, 9, 3, 3) };
+        Label Lb(string text) => new() { Text = text, AutoSize = true, Margin = new Padding(3, 9, 3, 3) };
         var name = new TextBox { Dock = DockStyle.Fill, Text = string.IsNullOrWhiteSpace(step.Variable) ? "vrijednost" : step.Variable };
         var prompt = new TextBox { Dock = DockStyle.Fill, Text = step.Prompt ?? "" };
         var def = new TextBox { Dock = DockStyle.Fill, Text = step.DefaultValue ?? "" };
-        t.Controls.Add(L("Naziv varijable"), 0, 0); t.Controls.Add(name, 1, 0);
-        t.Controls.Add(L("Pitanje"), 0, 1); t.Controls.Add(prompt, 1, 1);
-        t.Controls.Add(L("Zadana vrijednost"), 0, 2); t.Controls.Add(def, 1, 2);
+        t.Controls.Add(Lb(L.T("Naziv varijable")), 0, 0); t.Controls.Add(name, 1, 0);
+        t.Controls.Add(Lb(L.T("Pitanje")), 0, 1); t.Controls.Add(prompt, 1, 1);
+        t.Controls.Add(Lb(L.T("Zadana vrijednost")), 0, 2); t.Controls.Add(def, 1, 2);
         t.Controls.Add(new Label
         {
             AutoSize = true, MaximumSize = new Size(330, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 10, 3, 3),
-            Text = "Kad makro dođe do ovog koraka, otvori se prozor za unos. Upisana vrijednost se u kasnijim koracima " +
-                   "koristi kao {naziv} (u tekstu, URL-u, tijelu, zaglavljima i argumentima). Odustajanje prekida makro."
+            Text = L.T("Kad makro dođe do ovog koraka, otvori se prozor za unos. Upisana vrijednost se u kasnijim koracima koristi kao {naziv} (u tekstu, URL-u, tijelu, zaglavljima i argumentima). Odustajanje prekida makro.")
         }, 1, 3);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 52, Padding = new Padding(10) };
         var ok = new Button { Text = "U redu", DialogResult = DialogResult.OK, Width = 100, Tag = "primary" };
-        var cancel = new Button { Text = "Odustani", DialogResult = DialogResult.Cancel, Width = 100 };
+        var cancel = new Button { Text = L.T("Odustani"), DialogResult = DialogResult.Cancel, Width = 100 };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(ok);
         Controls.Add(t);
@@ -345,7 +342,7 @@ internal sealed class InputStepDialog : DarkDialog
             string n = new string(name.Text.Trim().Where(ch => char.IsLetterOrDigit(ch) || ch == '_').ToArray());
             if (n.Length == 0)
             {
-                MessageBox.Show(this, "Naziv varijable smije imati slova, brojeve i _.", "Unos vrijednosti", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, L.T("Naziv varijable smije imati slova, brojeve i _."), L.T("Unos vrijednosti"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 DialogResult = DialogResult.None;
                 return;
             }

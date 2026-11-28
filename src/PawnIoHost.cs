@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Security.Principal;
 using Microsoft.Win32;
 
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>
 /// PawnIO „bez trajne instalacije“: službeni PawnIO_setup.exe (ugrađen u exe) pokreće se s -install -silent kad je
@@ -50,7 +50,7 @@ public static class PawnIoHost
         foreach (var name in new[] { "PawnIO_setup.exe", "SmbusI801.bin" })
         {
             using var src = typeof(PawnIoHost).Assembly.GetManifestResourceStream(name);
-            if (src == null) throw new FileNotFoundException("U programu nedostaje " + name);
+            if (src == null) throw new FileNotFoundException(L.T("U programu nedostaje ") + name);
             string dst = Path.Combine(Folder, name);
             if (File.Exists(dst) && new FileInfo(dst).Length == src.Length) continue;
             using var f = File.Create(dst);
@@ -63,9 +63,9 @@ public static class PawnIoHost
     {
         lock (Lock)
         {
-            if (!IsElevated) return "Za memoriju program mora raditi kao administrator.";
+            if (!IsElevated) return L.T("Za memoriju program mora raditi kao administrator.");
             try { Extract(); }
-            catch (Exception ex) { return "Raspakiravanje PawnIO-a nije uspjelo: " + ex.Message; }
+            catch (Exception ex) { return L.T("Raspakiravanje PawnIO-a nije uspjelo: ") + ex.Message; }
             if (IsInstalled)
             {
                 string where = "";
@@ -76,7 +76,7 @@ public static class PawnIoHost
                 }
                 catch { }
                 Log.Write(InstalledByUs ? "RAM: PawnIO je od prije instalirao G815 Studio (bit će uklonjen pri izlazu)." + where
-                                        : "RAM: PawnIO je već instaliran u sustavu – program ga neće uklanjati." + where);
+                                        : L.T("RAM: PawnIO je već instaliran u sustavu – program ga neće uklanjati.") + where);
                 return null;
             }
             Log.Write("RAM: instaliram PawnIO (privremeno, do izlaza iz programa)…");

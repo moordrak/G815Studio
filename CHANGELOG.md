@@ -1,5 +1,12 @@
 # Popis promjena
 
+## v2.0.0
+- **Novo ime: SVITAC.** Program više nije samo za G815, nego upravlja i mišem, matičnom pločom i memorijom, pa se sada zove SVITAC. Exe je `SVITAC.exe`, a postavke su u `%APPDATA%\SVITAC`. Pri prvom pokretanju postavke, profili i makroi iz stare mape `%APPDATA%\G815Studio` sami se kopiraju, a pokretanje s Windowsima prebacuje se na novo ime.
+- **Novo futurističko sučelje:** tamna HUD tema s odsječenim kutovima i cijan naglaskom, ugrađeni fontovi (Chakra Petch, Barlow, JetBrains Mono), uređaji u bočnoj traci s indikatorom stanja, šesterokutni gumbi banki M1–M3, telemetrija u zaglavlju (FPS s grafom, paketi, vrijeme slanja, zauzeto), pločice efekata s animiranim LED-icama, kružni brojčanici za brzinu i svjetlinu, segmentni birač smjera, makro koraci kao vremenska crta i sjaj (bloom) oko tipki na slici tipkovnice.
+- **Nove ikone:** krijesnica u šesterokutu za aplikaciju, tray i logo.
+- **Šest jezika:** hrvatski, engleski, njemački, francuski, španjolski i talijanski. Po zadanom prati jezik Windowsa (bosanski i srpski koriste hrvatski, ostali engleski), a mijenja se u *Postavke → Jezik / Language* bez ponovnog pokretanja.
+- Makro varijable imaju i engleske nazive: `{date}`, `{time}` i `{response}` (stari `{datum}`, `{vrijeme}` i `{odgovor}` i dalje rade).
+
 ## v1.8.1
 - **Rasvjeta prati monitore:** kad se monitori ugase zbog štednje energije, program ugasi svu rasvjetu (tipkovnicu, miša, računalo i memoriju). Kad se monitori ponovno upale (npr. pomakom miša ili pritiskom tipke), rasvjeta se vraća kakva je bila. Zatamnjeni zasloni ne gase rasvjetu. Uključeno je po zadanom, a isključuje se u *Postavke → Općenito*. Ako je rasvjeta ugašena iz traya (*Ugasi osvjetljenje*), ostaje ugašena i kad se monitori upale.
 

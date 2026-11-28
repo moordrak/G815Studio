@@ -1,10 +1,10 @@
-namespace G815Studio;
+namespace Svitac;
 
 public sealed class HidppException : Exception
 {
     public byte ErrorCode { get; }
 
-    public HidppException(byte code) : base($"HID++ greška 0x{code:X2} ({Describe(code)})")
+    public HidppException(byte code) : base(L.F("HID++ greška 0x{0:X2} ({1})", code, Describe(code)))
     {
         ErrorCode = code;
     }
@@ -12,14 +12,14 @@ public sealed class HidppException : Exception
     private static string Describe(byte c) => c switch
     {
         0x01 => "nepoznato",
-        0x02 => "neispravan argument",
-        0x03 => "izvan raspona",
-        0x04 => "hardverska greška",
+        0x02 => L.T("neispravan argument"),
+        0x03 => L.T("izvan raspona"),
+        0x04 => L.T("hardverska greška"),
         0x05 => "Logitech interno",
-        0x06 => "neispravan indeks značajke",
-        0x07 => "neispravna funkcija",
+        0x06 => L.T("neispravan indeks značajke"),
+        0x07 => L.T("neispravna funkcija"),
         0x08 => "zauzeto",
-        0x09 => "nije podržano",
+        0x09 => L.T("nije podržano"),
         _ => "?"
     };
 }
@@ -91,7 +91,7 @@ public sealed class HidppDevice : IDisposable
         }
         finally
         {
-            _pending?.TrySetException(new IOException("Uređaj je odspojen."));
+            _pending?.TrySetException(new IOException(L.T("Uređaj je odspojen.")));
             if (!_disposed) Disconnected?.Invoke();
         }
     }
@@ -220,7 +220,7 @@ public sealed class HidppDevice : IDisposable
                     if (!finished)
                     {
                         _inflight.TryRemove(fk, out _);
-                        throw new TimeoutException("Tipkovnica nije potvrdila paket boja.");
+                        throw new TimeoutException(L.T("Tipkovnica nije potvrdila paket boja."));
                     }
                 }
             }
@@ -248,7 +248,7 @@ public sealed class HidppDevice : IDisposable
             {
                 _stream.Write(Build(featureIndex, function, SwIdRequest, args));
                 if (!tcs.Task.Wait(timeoutMs))
-                    throw new TimeoutException($"Nema odgovora (značajka 0x{featureIndex:X2}, funkcija {function}).");
+                    throw new TimeoutException(L.F("Nema odgovora (značajka 0x{0:X2}, funkcija {1}).", featureIndex, function));
                 return tcs.Task.Result;
             }
             catch (AggregateException ae) when (ae.InnerException != null)

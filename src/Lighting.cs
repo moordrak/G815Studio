@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>Tipka kakvu vidi engine: zona + položaj (u jedinicama tipki i normalizirano 0..1).</summary>
 public sealed class LightKey

@@ -1,4 +1,4 @@
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>
 /// Visoka razina upravljanja tipkovnicom G815 preko HID++ 2.0.
@@ -43,7 +43,7 @@ public sealed class G815Keyboard : IDisposable
             if (_dev != null) return true;
             List<HidDeviceInfo> all;
             try { all = HidEnumerator.Enumerate(LogitechVid); }
-            catch (Exception ex) { error = "Enumeracija HID uređaja nije uspjela: " + ex.Message; return false; }
+            catch (Exception ex) { error = L.T("Enumeracija HID uređaja nije uspjela: ") + ex.Message; return false; }
 
             var candidates = all
                 .Where(d => SupportedPids.Contains(d.ProductId) && d.OutputReportLength == 20)
@@ -54,8 +54,8 @@ public sealed class G815Keyboard : IDisposable
             if (candidates.Count == 0)
             {
                 error = all.Any(d => SupportedPids.Contains(d.ProductId))
-                    ? "Tipkovnica je pronađena, ali bez HID++ sučelja."
-                    : "Tipkovnica G815 nije pronađena (je li spojena USB kabelom?).";
+                    ? L.T("Tipkovnica je pronađena, ali bez HID++ sučelja.")
+                    : L.T("Tipkovnica G815 nije pronađena (je li spojena USB kabelom?).");
                 return false;
             }
 
@@ -72,7 +72,7 @@ public sealed class G815Keyboard : IDisposable
                     dev.Start();
 
                     byte perKey = dev.GetFeatureIndex(FeatPerKeyLighting);
-                    if (perKey == 0) throw new InvalidOperationException("Uređaj ne podržava per-key osvjetljenje (0x8081).");
+                    if (perKey == 0) throw new InvalidOperationException(L.T("Uređaj ne podržava per-key osvjetljenje (0x8081)."));
 
                     _perKey = perKey;
                     _onboard = SafeIndex(dev, FeatOnboardProfiles);
@@ -99,7 +99,7 @@ public sealed class G815Keyboard : IDisposable
                 {
                     Log.Write("Neuspjelo: " + ex.Message);
                     error = ex is UnauthorizedAccessException || ex is System.ComponentModel.Win32Exception
-                        ? "Uređaj je zauzet. Zatvori Logitech G HUB (i u trayu) pa pokušaj ponovno. (" + ex.Message + ")"
+                        ? L.T("Uređaj je zauzet. Zatvori Logitech G HUB (i u trayu) pa pokušaj ponovno. (") + ex.Message + ")"
                         : ex.Message;
                     if (dev != null)
                     {

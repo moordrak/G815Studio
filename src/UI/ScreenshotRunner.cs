@@ -1,6 +1,6 @@
 using System.Drawing.Imaging;
 
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>
 /// Pokreće se s argumentom --screenshots &lt;mapa&gt;: otvori glavni prozor s primjerima profila i makroa,
@@ -11,7 +11,7 @@ internal sealed class ScreenshotRunner : ApplicationContext
 {
     public ScreenshotRunner(string dir)
     {
-        string temp = Path.Combine(Path.GetTempPath(), "G815Studio-snimke");
+        string temp = Path.Combine(Path.GetTempPath(), "SVITAC-snimke");
         try { if (Directory.Exists(temp)) Directory.Delete(temp, true); } catch { }
         SettingsStore.FolderOverride = temp;
         _ = Run(Path.GetFullPath(dir));
@@ -101,10 +101,10 @@ internal sealed class ScreenshotRunner : ApplicationContext
         c.PreviewRamSticks = 4;
         c.RebuildKeys();
         var main = c.ManualProfile;
-        var L = main.Lighting;
-        foreach (var id in new[] { "U1A", "U04", "U16", "U07" }) L.KeyColors[id] = "#FF2A4D";
-        for (int i = 0x3A; i <= 0x45; i++) L.KeyColors["U" + i.ToString("X2")] = "#FF9F1A";
-        L.KeyColors["U29"] = "#FF9F1A";
+        var lc = main.Lighting;
+        foreach (var id in new[] { "U1A", "U04", "U16", "U07" }) lc.KeyColors[id] = "#FF2A4D";
+        for (int i = 0x3A; i <= 0x45; i++) lc.KeyColors["U" + i.ToString("X2")] = "#FF9F1A";
+        lc.KeyColors["U29"] = "#FF9F1A";
 
         main.Macros[Profile.MacroKey(1, 1)] = new Macro
         {

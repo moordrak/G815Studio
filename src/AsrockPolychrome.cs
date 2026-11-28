@@ -1,6 +1,6 @@
 using System.Drawing;
 
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>Jedan izlaz ASRockovog RGB kontrolera: 4-pinski RGB header, ARGB header ili LED-ice na ploči.</summary>
 public sealed class AsrockChannel
@@ -11,7 +11,7 @@ public sealed class AsrockChannel
     public int LedCount { get; set; }
     public bool HwSwapRG { get; init; }          // kontroler za ovaj izlaz ima uključenu zamjenu R i G
     public int Segments { get; set; }            // broj virtualnih zona u efektima
-    public override string ToString() => $"{Name}: {LedCount} LED-ica{(Addressable ? " (ARGB)" : "")}";
+    public override string ToString() => L.F("{0}: {1} LED-ica", Name, LedCount) + (Addressable ? " (ARGB)" : "");
 }
 
 /// <summary>
@@ -34,7 +34,7 @@ public sealed class AsrockPolychrome : IDisposable
 
     private static readonly string[] ZoneNames =
     {
-        "RGB header 1", "RGB header 2", "ARGB header 1", "ARGB header 2", "PCH", "Pokrov I/O", "Ploča (PCB)", "ARGB header 3 / audio"
+        "RGB header 1", "RGB header 2", "ARGB header 1", "ARGB header 2", "PCH", L.T("Pokrov I/O"), L.T("Ploča (PCB)"), L.T("ARGB header 3 / audio")
     };
 
     private readonly object _lock = new();
@@ -51,7 +51,7 @@ public sealed class AsrockPolychrome : IDisposable
     private int _failures;
 
     public bool IsConnected { get { lock (_lock) return _hid != null; } }
-    public string Status { get; private set; } = "ASRock RGB kontroler nije pronađen.";
+    public string Status { get; private set; } = L.T("ASRock RGB kontroler nije pronađen.");
     public string Name { get; private set; } = "";
     /// <summary>Dodatna zamjena crvene i zelene (ako ventilatori pokazuju krive boje).</summary>
     public volatile bool SwapRG;
@@ -69,10 +69,10 @@ public sealed class AsrockPolychrome : IDisposable
             if (_hid != null) return true;
             List<HidDeviceInfo> all;
             try { all = HidEnumerator.Enumerate(Vid); }
-            catch (Exception ex) { Status = "Enumeracija nije uspjela: " + ex.Message; return false; }
+            catch (Exception ex) { Status = L.T("Enumeracija nije uspjela: ") + ex.Message; return false; }
             if (all.Count == 0)
             {
-                Status = "ASRock RGB kontroler nije pronađen (USB uređaj 26CE nije prisutan).";
+                Status = L.T("ASRock RGB kontroler nije pronađen (USB uređaj 26CE nije prisutan).");
                 return false;
             }
 
@@ -94,7 +94,7 @@ public sealed class AsrockPolychrome : IDisposable
                     }
                     Name = info.ProductId == 0x01A6 ? "ASRock Deskmini LED traka" : "ASRock Polychrome USB";
                     EnterDirect();
-                    Status = $"Spojeno: {Name}, " + (_channels.Count == 0 ? "nema izlaza" : string.Join(", ", _channels.Select(c => $"{c.Name} ({c.LedCount})")));
+                    Status = L.F("Spojeno: {0}", Name) + ", " + (_channels.Count == 0 ? L.T("nema izlaza") : string.Join(", ", _channels.Select(c => $"{c.Name} ({c.LedCount})")));
                     Log.Write("ASRock: " + Status);
                     _failures = 0;
                     StartThread();
@@ -108,7 +108,7 @@ public sealed class AsrockPolychrome : IDisposable
                     hid?.Dispose();
                 }
             }
-            Status = "ASRock uređaj je pronađen, ali ne odgovara kao Polychrome USB kontroler (pogledaj log.txt).";
+            Status = L.T("ASRock uređaj je pronađen, ali ne odgovara kao Polychrome USB kontroler (pogledaj log.txt).");
             return false;
         }
     }
@@ -125,7 +125,7 @@ public sealed class AsrockPolychrome : IDisposable
     /// <summary>Pošalje paket i pričeka odgovor (najviše 250 ms). Vraća null ako odgovora nema.</summary>
     private byte[] Transfer(byte[] buf)
     {
-        var hid = _hid ?? throw new IOException("Kontroler nije spojen.");
+        var hid = _hid ?? throw new IOException(L.T("Kontroler nije spojen."));
         hid.Write(buf);
         using var cts = new CancellationTokenSource(250);
         try
@@ -225,7 +225,7 @@ public sealed class AsrockPolychrome : IDisposable
             if (ch != null) ch.LedCount = count;
             AssignSegments();
             AllocateBuffers();
-            Status = $"Spojeno: {Name}, " + string.Join(", ", _channels.Select(c => $"{c.Name} ({c.LedCount})"));
+            Status = L.F("Spojeno: {0}", Name) + ", " + string.Join(", ", _channels.Select(c => $"{c.Name} ({c.LedCount})"));
         }
         ThreadPool.QueueUserWorkItem(_ => Changed?.Invoke());
     }
@@ -297,7 +297,7 @@ public sealed class AsrockPolychrome : IDisposable
                 if (++_failures >= 3)
                 {
                     Log.Write("ASRock: kontroler ne odgovara, odspajam: " + ex.Message);
-                    Drop("ASRock RGB kontroler je odspojen.");
+                    Drop(L.T("ASRock RGB kontroler je odspojen."));
                 }
                 Thread.Sleep(200);
             }
@@ -349,7 +349,7 @@ public sealed class AsrockPolychrome : IDisposable
             Array.Copy(data, pos, buf, offset, n);
             pos += n;
             first = false;
-            if (Transfer(buf) == null) throw new IOException("Nema odgovora na paket boja.");
+            if (Transfer(buf) == null) throw new IOException(L.T("Nema odgovora na paket boja."));
         }
     }
 
@@ -404,7 +404,7 @@ public sealed class AsrockPolychrome : IDisposable
                 Log.Write("ASRock: vraćanje nije uspjelo: " + ex.Message);
             }
         }
-        Drop("ASRock RGB je isključen.");
+        Drop(L.T("ASRock RGB je isključen."));
     }
 
     public void Dispose() => Release();

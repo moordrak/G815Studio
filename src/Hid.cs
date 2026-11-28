@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
-namespace G815Studio;
+namespace Svitac;
 
 /// <summary>Opis jednog HID sučelja (Windows svaku "top-level collection" prikazuje kao zaseban uređaj).</summary>
 public sealed class HidDeviceInfo
@@ -231,7 +231,7 @@ public sealed class HidStream : IDisposable
     {
         var buf = new byte[InputReportLength];
         int n = await _fs.ReadAsync(buf.AsMemory(0, buf.Length), ct).ConfigureAwait(false);
-        if (n <= 0) throw new IOException("Uređaj je odspojen.");
+        if (n <= 0) throw new IOException(L.T("Uređaj je odspojen."));
         if (n < buf.Length) Array.Resize(ref buf, n);
         return buf;
     }

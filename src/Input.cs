@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace G815Studio;
+namespace Svitac;
 
 public readonly record struct KeyHookEvent(int Vk, int Scan, bool Extended, bool Down, bool Injected, bool OwnInjected);
 
@@ -292,8 +292,8 @@ public sealed class MacroPlayer
             {
                 string name = string.IsNullOrWhiteSpace(s.Variable) ? "vrijednost" : s.Variable.Trim();
                 string def = Substitute(s.DefaultValue ?? "", vars);
-                string prompt = string.IsNullOrWhiteSpace(s.Prompt) ? $"Unesi vrijednost za {{{name}}}:" : Substitute(s.Prompt, vars);
-                string value = Ui?.Invoke(() => PromptDialog.ShowTop("G815 Studio – makro", prompt, def));
+                string prompt = string.IsNullOrWhiteSpace(s.Prompt) ? L.F("Unesi vrijednost za {0}:", "{" + name + "}") : Substitute(s.Prompt, vars);
+                string value = Ui?.Invoke(() => PromptDialog.ShowTop("SVITAC – " + L.T("makro"), prompt, def));
                 if (value == null) throw new OperationCanceledException(); // korisnik je odustao → prekini makro
                 vars[name] = value;
                 break;
@@ -309,7 +309,7 @@ public sealed class MacroPlayer
 
     /// <summary>
     /// Zamjenjuje {naziv} vrijednostima: varijable iz koraka "Unos vrijednosti", {odgovor} (tijelo zadnjeg HTTP odgovora),
-    /// {status}, {datum}, {vrijeme}, {clipboard}. Dodatak ":url" kodira vrijednost za URL, npr. {grad:url}.
+    /// {status}, {datum}/{date}, {vrijeme}/{time}, {clipboard}. Dodatak ":url" kodira vrijednost za URL, npr. {grad:url}.
     /// </summary>
     private string Substitute(string text, Dictionary<string, string> vars)
     {
@@ -320,7 +320,9 @@ public sealed class MacroPlayer
             string value;
             if (vars.TryGetValue(name, out var v)) value = v;
             else if (name.Equals("datum", StringComparison.OrdinalIgnoreCase)) value = DateTime.Now.ToString("dd.MM.yyyy");
-            else if (name.Equals("vrijeme", StringComparison.OrdinalIgnoreCase)) value = DateTime.Now.ToString("HH:mm:ss");
+            else if (name.Equals("date", StringComparison.OrdinalIgnoreCase)) value = DateTime.Now.ToString("d", System.Globalization.CultureInfo.CurrentCulture);
+            else if (name.Equals("vrijeme", StringComparison.OrdinalIgnoreCase) || name.Equals("time", StringComparison.OrdinalIgnoreCase))
+                value = DateTime.Now.ToString("HH:mm:ss");
             else if (name.Equals("clipboard", StringComparison.OrdinalIgnoreCase))
                 value = Ui?.Invoke(() => Clipboard.ContainsText() ? Clipboard.GetText() : "") ?? "";
             else return m.Value;
@@ -332,7 +334,7 @@ public sealed class MacroPlayer
     {
         string url = Substitute(s.Url ?? "", vars).Trim();
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
-            throw new InvalidOperationException("Neispravan URL: " + url);
+            throw new InvalidOperationException(L.T("Neispravan URL: ") + url);
 
         var req = new System.Net.Http.HttpRequestMessage(new System.Net.Http.HttpMethod((s.Method ?? "GET").ToUpperInvariant()), uri);
         string body = Substitute(s.Body ?? "", vars);
@@ -358,7 +360,7 @@ public sealed class MacroPlayer
         {
             using var resp = Http.SendAsync(req, timeout.Token).GetAwaiter().GetResult();
             string text = resp.Content.ReadAsStringAsync(timeout.Token).GetAwaiter().GetResult();
-            vars["odgovor"] = text;
+            vars["odgovor"] = vars["response"] = text;   // {response} je engleski naziv iste varijable
             vars["status"] = ((int)resp.StatusCode).ToString();
             Log.Write($"HTTP {method} {uri} → {(int)resp.StatusCode}");
             if (s.ShowResult)
@@ -369,7 +371,7 @@ public sealed class MacroPlayer
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new TimeoutException($"HTTP poziv nije odgovorio na vrijeme ({uri.Host}).");
+            throw new TimeoutException(L.F("HTTP poziv nije odgovorio na vrijeme ({0}).", uri.Host));
         }
         finally
         {

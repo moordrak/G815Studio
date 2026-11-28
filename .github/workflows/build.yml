@@ -26,13 +26,13 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Publish
         run: >
-          dotnet publish G815Studio.csproj -c Release -r win-x64 --self-contained true
+          dotnet publish SVITAC.csproj -c Release -r win-x64 --self-contained true
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
           -p:EnableCompressionInSingleFile=true -o publish
       - uses: actions/upload-artifact@v4
         with:
-          name: G815Studio
-          path: publish/G815Studio.exe
+          name: SVITAC
+          path: publish/SVITAC.exe
       - name: Release
         if: github.event_name == 'release'
         shell: bash
@@ -42,7 +42,7 @@ jobs:
           TAG="${{ github.event.release.tag_name || github.ref_name }}"
           # do 3 pokušaja (GitHub povremeno vrati 502)
           for i in 1 2 3; do
-            gh release upload "$TAG" publish/G815Studio.exe --clobber && exit 0
+            gh release upload "$TAG" publish/SVITAC.exe --clobber && exit 0
             echo "Pokušaj $i nije uspio, ponavljam za 10 s…"
             sleep 10
           done

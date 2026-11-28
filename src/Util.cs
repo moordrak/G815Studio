@@ -1,4 +1,4 @@
-namespace G815Studio;
+namespace Svitac;
 
 public static class ColorUtil
 {
