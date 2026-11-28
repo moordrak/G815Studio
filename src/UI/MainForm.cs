@@ -928,13 +928,20 @@ public sealed class MainForm : Form
             finally { ramBtn.Enabled = true; }
         }, 220);
         ram.Controls.Add(ramBtn);
+        if (!PawnIoHost.IsElevated)
+        {
+            ram.Controls.Add(Ui.Btn("Ponovno pokreni kao administrator", (_, _) =>
+            {
+                if (PawnIoHost.RestartElevated()) { if (TrayContext.Current != null) TrayContext.Current.RequestExit(); else Application.Exit(); }
+            }, 260));
+        }
         ram.Controls.Add(ramStatus);
         ram.Controls.Add(new Label
         {
             AutoSize = true, MaximumSize = new Size(900, 0), ForeColor = SystemColors.GrayText,
-            Text = "Memorija se ne vidi kao USB uređaj, nego preko SMBus-a na ploči. Za to treba instalirati PawnIO (pawnio.eu), " +
-                   "staviti modul SmbusI801.bin pokraj G815Studio.exe i pokrenuti program kao administrator. " +
-                   "Ovaj korak ništa ne upisuje, samo čita koje adrese odgovaraju i zapisuje ih u log."
+            Text = "Memorija se ne vidi kao USB uređaj, nego preko SMBus-a na ploči, za što treba drajver PawnIO (pawnio.eu). " +
+                   "Program ga nosi u sebi: kad zatreba, privremeno ga instalira, a pri izlazu ga ukloni (ako ga nisi imao od prije). " +
+                   "Program pritom mora raditi kao administrator. Ovaj korak ništa ne upisuje u memoriju, samo čita koje adrese odgovaraju i zapisuje ih u log."
         });
         flow.Controls.Add(Ui.Group("Računalo (ASRock RGB)", pc));
         flow.Controls.Add(Ui.Group("Memorija (Kingston Fury) – ispitivanje", ram));

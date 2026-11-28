@@ -3,9 +3,9 @@ using System.Runtime.InteropServices;
 namespace G815Studio;
 
 /// <summary>
-/// SMBus na matičnoj ploči preko PawnIO (potpisani drajver, https://pawnio.eu) i njegovog modula SmbusI801.bin
-/// (Intel PCH, npr. B760). Isti pristup koristi OpenRGB. Za sada se koristi samo za čitanje.
-/// Potrebno: instaliran PawnIO, SmbusI801.bin pokraj G815Studio.exe ili u %APPDATA%\G815Studio, pokretanje kao administrator.
+/// SMBus na matičnoj ploči preko PawnIO drajvera (https://pawnio.eu) i njegovog modula SmbusI801.bin (Intel PCH, npr. B760).
+/// Isti pristup koristi OpenRGB. S drajverom se razgovara izravno kroz IOCTL (bez PawnIOLib.dll).
+/// PawnIO po potrebi privremeno instalira <see cref="PawnIoHost"/>; program mora raditi kao administrator.
 /// </summary>
 public sealed class PawnIoSmbus : IDisposable
 {
@@ -13,76 +13,55 @@ public sealed class PawnIoSmbus : IDisposable
     private const ulong Read = 1;
     private const ulong SizeByte = 1, SizeByteData = 2, SizeWordData = 3;
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int VersionFn(out uint version);
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int OpenFn(out IntPtr handle);
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int LoadFn(IntPtr handle, byte[] blob, UIntPtr size);
-    [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Ansi)]
-    private delegate int ExecuteFn(IntPtr handle, string name, ulong[] input, UIntPtr inSize, ulong[] output, UIntPtr outSize, out UIntPtr returned);
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int CloseFn(IntPtr handle);
+    // CTL_CODE(41394, funkcija, METHOD_BUFFERED, FILE_ANY_ACCESS) iz pawnio_um.h
+    private const uint IoctlLoadBinary = (41394u << 16) | (0x821u << 2);
+    private const uint IoctlExecuteFn = (41394u << 16) | (0x841u << 2);
+    private const int FnNameLength = 32;
 
-    private IntPtr _lib, _handle;
-    private ExecuteFn _execute;
-    private CloseFn _close;
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool DeviceIoControl(Microsoft.Win32.SafeHandles.SafeFileHandle h, uint code, byte[] inBuf, int inSize, byte[] outBuf, int outSize, out int returned, IntPtr overlapped);
+
+    private Microsoft.Win32.SafeHandles.SafeFileHandle _dev;
     private Mutex _mutex;
 
     public string Description { get; private set; } = "";
 
-    public static IEnumerable<string> LibCandidates()
-    {
-        yield return Path.Combine(AppContext.BaseDirectory, "PawnIOLib.dll");
-        string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        yield return Path.Combine(pf, "PawnIO", "PawnIOLib.dll");
-    }
-
     public static IEnumerable<string> ModuleCandidates(string file)
     {
+        yield return Path.Combine(PawnIoHost.Folder, file);
         yield return Path.Combine(AppContext.BaseDirectory, file);
         yield return Path.Combine(SettingsStore.Folder, file);
-        string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        yield return Path.Combine(pf, "PawnIO", file);
-        yield return Path.Combine(pf, "PawnIO", "modules", file);
     }
 
     /// <summary>Otvori PawnIO i učita SMBus modul. Vraća null ako je sve u redu, inače opis problema.</summary>
     public string Open(string moduleFile = "SmbusI801.bin")
     {
-        string libPath = LibCandidates().FirstOrDefault(File.Exists);
-        if (libPath == null || !NativeLibrary.TryLoad(libPath, out _lib))
-            return "PawnIO nije instaliran (nema PawnIOLib.dll). Instaliraj ga s https://pawnio.eu.";
-
-        T Fn<T>(string name) where T : Delegate => Marshal.GetDelegateForFunctionPointer<T>(NativeLibrary.GetExport(_lib, name));
-        var version = Fn<VersionFn>("pawnio_version");
-        var open = Fn<OpenFn>("pawnio_open");
-        var load = Fn<LoadFn>("pawnio_load");
-        _execute = Fn<ExecuteFn>("pawnio_execute");
-        _close = Fn<CloseFn>("pawnio_close");
-
-        int hr = version(out uint v);
-        Log.Write($"RAM: PawnIOLib {libPath}, verzija 0x{v:X} (hr 0x{hr:X8})");
-
         string modPath = ModuleCandidates(moduleFile).FirstOrDefault(File.Exists);
-        if (modPath == null)
-            return $"Nema modula {moduleFile}. Stavi ga pokraj G815Studio.exe ili u {SettingsStore.Folder}.";
+        if (modPath == null) return $"Nema modula {moduleFile}.";
         var blob = File.ReadAllBytes(modPath);
 
-        hr = open(out _handle);
-        if (hr != 0)
-            return unchecked((uint)hr) == 0x80070005
-                ? "PawnIO odbija pristup: pokreni G815 Studio kao administrator."
-                : $"PawnIO se ne može otvoriti (hr 0x{hr:X8}).";
-        hr = load(_handle, blob, (UIntPtr)blob.Length);
-        if (hr != 0)
+        foreach (var path in new[] { @"\\.\GLOBALROOT\Device\PawnIO", @"\\.\PawnIO" })
         {
-            _close(_handle);
-            _handle = IntPtr.Zero;
-            return unchecked((uint)hr) == 0x80070032
-                ? $"Modul {moduleFile} ne podržava ovu ploču."
-                : $"Modul {moduleFile} se ne može učitati (hr 0x{hr:X8}).";
+            var h = CreateFile(path, 0xC0000000 /* čitanje i pisanje */, 7 /* dijeli sve */, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0, IntPtr.Zero);
+            if (!h.IsInvalid) { _dev = h; break; }
+            int err = Marshal.GetLastWin32Error();
+            h.Dispose();
+            if (err == 5) return "PawnIO odbija pristup: program mora raditi kao administrator.";
+        }
+        if (_dev == null) return "PawnIO drajver nije pokrenut.";
+
+        if (!DeviceIoControl(_dev, IoctlLoadBinary, blob, blob.Length, null, 0, out _, IntPtr.Zero))
+        {
+            int err = Marshal.GetLastWin32Error();
+            return err == 50 ? $"Modul {moduleFile} ne podržava ovu ploču." : $"Modul {moduleFile} se ne može učitati (greška {err}).";
         }
 
         // identitet: naziv sabirnice (8 znakova) i PCI ID-ovi kontrolera
         var outId = new ulong[3];
-        if (Exec("ioctl_identity", new ulong[] { 0 }, outId) == 0)
+        if (Exec("ioctl_identity", new ulong[] { 0 }, outId))
         {
             var name = new string(BitConverter.GetBytes(outId[0]).TakeWhile(b => b != 0).Select(b => (char)b).ToArray());
             ulong pci = outId[2];
@@ -95,10 +74,17 @@ public sealed class PawnIoSmbus : IDisposable
         return null;
     }
 
-    private int Exec(string fn, ulong[] input, ulong[] output)
+    /// <summary>Poziv funkcije modula: ulaz je 32 bajta imena + ulazne vrijednosti, izlaz su 64-bitne vrijednosti.</summary>
+    private bool Exec(string fn, ulong[] input, ulong[] output)
     {
-        var o = output.Length == 0 ? new ulong[1] : output;
-        return _execute(_handle, fn, input, (UIntPtr)input.Length, o, (UIntPtr)output.Length, out _);
+        var inBuf = new byte[FnNameLength + input.Length * 8];
+        var nameBytes = System.Text.Encoding.ASCII.GetBytes(fn);
+        Array.Copy(nameBytes, inBuf, Math.Min(nameBytes.Length, FnNameLength - 1));
+        Buffer.BlockCopy(input, 0, inBuf, FnNameLength, input.Length * 8);
+        var outBuf = new byte[Math.Max(8, output.Length * 8)];
+        bool ok = DeviceIoControl(_dev, IoctlExecuteFn, inBuf, inBuf.Length, outBuf, output.Length * 8, out int got, IntPtr.Zero);
+        if (ok && output.Length > 0) Buffer.BlockCopy(outBuf, 0, output, 0, Math.Min(got, output.Length * 8));
+        return ok;
     }
 
     /// <summary>Jedan SMBus prijenos (samo čitanje). Vraća null ako uređaj ne odgovori.</summary>
@@ -114,7 +100,7 @@ public sealed class PawnIoSmbus : IDisposable
         try
         {
             try { locked = _mutex != null && _mutex.WaitOne(1000); } catch (AbandonedMutexException) { locked = true; }
-            return Exec("ioctl_smbus_xfer", input, output) == 0 ? output : null;
+            return Exec("ioctl_smbus_xfer", input, output) ? output : null;
         }
         finally
         {
@@ -128,23 +114,29 @@ public sealed class PawnIoSmbus : IDisposable
 
     public void Dispose()
     {
-        if (_handle != IntPtr.Zero) { try { _close(_handle); } catch { } _handle = IntPtr.Zero; }
+        _dev?.Dispose();
+        _dev = null;
         _mutex?.Dispose();
         _mutex = null;
-        if (_lib != IntPtr.Zero) { NativeLibrary.Free(_lib); _lib = IntPtr.Zero; }
     }
 }
 
 /// <summary>
-/// Kingston Fury (DDR4/DDR5) RGB – 1. korak: samo dijagnostika. Ništa se ne upisuje ni u memoriju ni u njen RGB čip:
+/// Kingston Fury (DDR4/DDR5) RGB – 1. korak: samo dijagnostika. Ništa se ne upisuje ni u memoriju ni u njen RGB čip
+/// (PawnIO se po potrebi privremeno instalira):
 /// traži koje adrese na SMBus-u odgovaraju (SPD 0x50–0x57, RGB DDR4 0x58–0x5F, DDR5 0x60–0x67) i čita nekoliko registara.
 /// </summary>
 public static class RamProbe
 {
     public static string Run()
     {
+        string err = PawnIoHost.Ensure();
+        if (err != null)
+        {
+            Log.Write("RAM: " + err);
+            return err;
+        }
         using var bus = new PawnIoSmbus();
-        string err;
         try { err = bus.Open(); }
         catch (Exception ex) { err = "PawnIO greška: " + ex.Message; }
         if (err != null)

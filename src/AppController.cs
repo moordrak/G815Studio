@@ -475,6 +475,7 @@ public sealed class AppController : IDisposable
         Keyboard.Release(dark);
         Mouse.Release(dark);
         Pc.Release(dark);
+        PawnIoHost.RemoveIfOurs();
         SettingsStore.Save(Settings);
     }
 }

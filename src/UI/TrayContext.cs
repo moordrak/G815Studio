@@ -50,6 +50,7 @@ internal sealed class TrayContext : ApplicationContext
 
     public TrayContext(bool startHidden)
     {
+        Current = this;
         _ui = SynchronizationContext.Current;
         _c = new AppController();
 
@@ -123,6 +124,11 @@ internal sealed class TrayContext : ApplicationContext
         _form.Activate();
         _form.BringToFront();
     }
+
+    /// <summary>Trenutni primjerak (za uredan izlaz iz drugih dijelova programa).</summary>
+    public static TrayContext Current { get; private set; }
+
+    public void RequestExit() => Exit();
 
     private void Exit()
     {
