@@ -9,6 +9,8 @@
 - **Četiri boje:** efekti s prijelazom boja (val, izmjena boja, spiralna i radijalna duga, gradijentni val, mozaik, VU metar, spektar) mogu prelijevati do četiri vlastite boje.
 - **Zadane boje:** gumbi *Zadane boje ovog efekta* i *Zadane boje svih efekata* vraćaju tvorničke boje (brzina i smjer ostaju).
 - **Tipkovnica pouzdanije i brže:** paket koji tipkovnica odbije (zauzeto) više ne ponavlja cijeli okvir, nego se ponovno šalju samo njegove tipke. Paketi idu u manjim skupinama, gotovo iste boje dijele paket, a kad se slika smiri sve se tipke još jednom osvježe, pa nijedna ne ostane upaljena.
+- Zone koje tipkovnica odbija kao nepostojeće (greška 0x02, npr. ostale od ispitivača zona) program sam prepozna i više ih ne šalje, pa nestaju ponovljene greške u logu.
+- Krug (ventilator) može svijetliti i linearno: efekt ga zahvaća redom LED-ica kao ravnu traku (*Krug svijetli linearno*).
 - *Isključeno* i *Ugasi osvjetljenje* gase i miš i računalo kad su u načinu jedne boje.
 - Skener ima izbor smjera (lijevo-desno ili gore-dolje), a val i gradijentni val imaju i smjer *Dolje → gore*.
 - LED-ice na ploči (PCB) svijetle svaka zasebno i vide se u izborniku izlaza pod *Postavke → Računalo*.

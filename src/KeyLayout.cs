@@ -284,8 +284,16 @@ public static class KeyLayouts
                         if (vertical) { cx = dx + PcThick / 2; cy = dy + along; w = 0.5f; h = thin; }
                         else { cx = dx + along; cy = dy + PcThick / 2; w = thin; h = 0.5f; }
                     }
+                    // krug koji svijetli linearno: efekt ga zahvaća kao vodoravnu traku iste širine, redom LED-ica
+                    float? sx = null, sy = null;
+                    if (shape == "ring" && p?.Linear == true)
+                    {
+                        sx = dx + (j + 0.5f) / leds * size;
+                        sy = dy + size / 2;
+                    }
                     keys.Add(new KeyDef
                     {
+                        SampleX = sx, SampleY = sy,
                         Id = "PC" + zi, Label = leds == 1 ? ch.Name : $"{ch.Name} · {i + 1}", DefaultZone = z, Zone = z,
                         X = cx - w / 2, Y = cy - h / 2, W = w, H = h, Group = "pc", Shape = "pc",
                         Device = ch.Id, DeviceName = ch.Name, DevX = dx, DevY = dy, DevW = dw, DevH = dh,
@@ -324,8 +332,10 @@ public static class KeyLayouts
             float mid = vertical ? d0.DevY + d0.DevH / 2 : d0.DevX + d0.DevW / 2;
             foreach (var k in dev)
             {
-                if (vertical) { if (k.CenterY > mid) k.SampleY = 2 * mid - k.CenterY; }
-                else if (k.CenterX > mid) k.SampleX = 2 * mid - k.CenterX;
+                float ex = k.EffectX, ey = k.EffectY;
+                if (vertical ? ey <= mid : ex <= mid) continue;
+                k.SampleX = vertical ? ex : 2 * mid - ex;
+                k.SampleY = vertical ? 2 * mid - ey : ey;
             }
         }
 

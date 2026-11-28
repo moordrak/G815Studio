@@ -67,7 +67,7 @@ public sealed class MainForm : Form
     private Button _pcWrite;
     private CheckBox _ramEnable;
     private Label _ramStatus;
-    private CheckBox _arrangeChk, _devVertical, _devReverse, _devMirror;
+    private CheckBox _arrangeChk, _devVertical, _devReverse, _devMirror, _devLinear;
     private ComboBox _devCombo, _devShape;
     private NumericUpDown _devSize;
 
@@ -566,6 +566,9 @@ public sealed class MainForm : Form
         shapeRow.Controls.Add(_devShape);
         shapeRow.Controls.Add(_devVertical);
         lay.Controls.Add(shapeRow);
+        _devLinear = new CheckBox { Text = "Krug svijetli linearno (redom LED-ica)", AutoSize = true };
+        _devLinear.CheckedChanged += (_, _) => SaveDevicePlacement();
+        lay.Controls.Add(_devLinear);
         _devReverse = new CheckBox { Text = "Obrnuti smjer LED-ica", AutoSize = true };
         _devReverse.CheckedChanged += (_, _) => SaveDevicePlacement();
         lay.Controls.Add(_devReverse);
@@ -1149,12 +1152,14 @@ public sealed class MainForm : Form
             bool ring = p?.Shape == "ring";
             _devShape.SelectedIndex = ring ? 1 : 0;
             _devVertical.Checked = p?.Vertical == true;
+            _devLinear.Checked = p?.Linear == true;
             _devReverse.Checked = p?.Reverse == true;
             _devMirror.Checked = p?.Mirror == true;
             _devSize.Value = Math.Clamp((decimal)(p?.Size ?? 0), _devSize.Minimum, _devSize.Maximum);
             _devShape.Enabled = _devSize.Enabled = pc;
             _devReverse.Enabled = _devMirror.Enabled = item != null;   // smjer i zrcalo na svim uređajima osim tipkovnice
             _devVertical.Enabled = pc && !ring;
+            _devLinear.Enabled = pc && ring;
         }
         finally { _loading = was; }
     }
@@ -1181,9 +1186,11 @@ public sealed class MainForm : Form
         }
         else p.Size = (float)_devSize.Value;
         p.Vertical = p.Shape == "line" && _devVertical.Checked;
+        p.Linear = p.Shape == "ring" && _devLinear.Checked;
         p.Reverse = _devReverse.Checked;
         p.Mirror = _devMirror.Checked;
         _devVertical.Enabled = p.Shape == "line";
+        _devLinear.Enabled = p.Shape == "ring";
         _c.PlacementChanged();
     }
 

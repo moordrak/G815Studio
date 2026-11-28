@@ -715,6 +715,8 @@ public sealed class LightingEngine : IDisposable
         // zone 0xE0+ su virtualne zone računala i miša i nikad ne idu tipkovnici
         foreach (var k in keys) if (!_mouseZone[k.Zone] && k.Zone < FirstVirtualZone) _everUsed[k.Zone] = true;
         for (int z = FirstVirtualZone; z < 256; z++) _everUsed[z] = false;
+        // zone koje tipkovnica stalno odbija (npr. ostale od ispitivača zona) više se ne šalju
+        for (int z = 1; z < FirstVirtualZone; z++) if (_everUsed[z] && _kb.IsBadZone((byte)z)) _everUsed[z] = false;
 
         var changes = new List<(byte Zone, Color Color)>();
         lock (_sentValid)

@@ -220,6 +220,8 @@ public sealed class G815Keyboard : IDisposable
     {
         var dev = _dev;
         if (dev == null || _perKey == 0 || changes.Count == 0) return;
+        if (changes.Any(c => _zoneBad[c.Zone])) changes = changes.Where(c => !_zoneBad[c.Zone]).ToList();
+        if (changes.Count == 0) return;
 
         // Isto kao OpenRGB: promijenjene tipke grupiraju se po boji. Grupa od 4+ tipke ide
         // "velikim" paketom (funkcija 6: boja + do 13 tipki, ostatak 0), ostale "malim" (funkcija 1: 4× tipka+boja).
@@ -251,7 +253,7 @@ public sealed class G815Keyboard : IDisposable
             foreach (var f in current)
             {
                 if (singles.Count % 4 == 0) break;
-                if (f.Zone == 0 || changed.Contains(f.Zone)) continue;
+                if (f.Zone == 0 || changed.Contains(f.Zone) || _zoneBad[f.Zone]) continue;
                 singles.Add(f);
                 changed.Add(f.Zone);
             }
@@ -282,6 +284,7 @@ public sealed class G815Keyboard : IDisposable
             if (sent > 0 && (pace ? sent % 4 == 0 : sent % 8 == 0)) Thread.Sleep(1);
             _sw = (byte)(_sw % 9 + 1);
             lock (_recent) _recent[_sw] = (fn, args);
+            CountSent(fn, args);
             dev.Send(_perKey, fn, args, _sw);  // WriteFile čeka dok paket ne ode na USB
             sent++;
         }
@@ -315,6 +318,29 @@ public sealed class G815Keyboard : IDisposable
     }
 
     private readonly System.Collections.Concurrent.ConcurrentQueue<byte> _rejected = new();
+    private readonly int[] _zoneSent = new int[256];
+    private readonly int[] _zoneInvalid = new int[256];
+    private readonly bool[] _zoneBad = new bool[256];
+
+    /// <summary>Zona koju tipkovnica odbija kao neispravnu (greška 0x02) – ne postoji na ovoj tipkovnici.</summary>
+    public bool IsBadZone(byte z) => Volatile.Read(ref _zoneBad[z]);
+
+    private void CountSent(byte fn, byte[] a)
+    {
+        if (fn == 6) { for (int j = 3; j < 16; j++) if (a[j] != 0) Interlocked.Increment(ref _zoneSent[a[j]]); }
+        else for (int j = 0; j < 4; j++) if (a[j * 4] != 0) Interlocked.Increment(ref _zoneSent[a[j * 4]]);
+    }
+
+    /// <summary>Greška 0x02: zona koja je u odbijenim paketima puno češće nego u prihvaćenima je neispravna.</summary>
+    private void CountInvalid(byte z)
+    {
+        int bad = Interlocked.Increment(ref _zoneInvalid[z]);
+        if (!_zoneBad[z] && bad >= 3 && bad * 2 > Volatile.Read(ref _zoneSent[z]))
+        {
+            _zoneBad[z] = true;
+            Log.Write($"Tipkovnica: zona 0x{z:X2} ne postoji (odbijena {bad}×), više se ne šalje.");
+        }
+    }
 
     /// <summary>Zone iz paketa koje je tipkovnica odbila (zauzeto ili greška), da ih osvjetljenje pošalje ponovno.</summary>
     public List<byte> TakeRejectedZones()
@@ -324,14 +350,18 @@ public sealed class G815Keyboard : IDisposable
         return list;
     }
 
-    private void RememberRejected(byte fnSw)
+    private void RememberRejected(byte fnSw, bool invalid = false)
     {
         lock (_recent)
         {
             if (!_recent.TryGetValue((byte)(fnSw & 0x0F), out var p) || p.Fn != fnSw >> 4) return;
             var a = p.Args;
-            if (p.Fn == 6) { for (int j = 3; j < 16; j++) if (a[j] != 0) _rejected.Enqueue(a[j]); }
-            else for (int j = 0; j < 4; j++) if (a[j * 4] != 0) _rejected.Enqueue(a[j * 4]);
+            var zones = p.Fn == 6 ? a.Skip(3).Where(z => z != 0) : Enumerable.Range(0, 4).Select(j => a[j * 4]).Where(z => z != 0);
+            foreach (byte z in zones)
+            {
+                if (invalid) CountInvalid(z);
+                if (!_zoneBad[z]) _rejected.Enqueue(z);
+            }
         }
     }
 
@@ -370,8 +400,7 @@ public sealed class G815Keyboard : IDisposable
         // odbijen paket boja: tipke iz njega nisu osvježene → zatraži ponovno slanje svega (rijetko)
         if (feature == _perKey && code == 0x02)
         {
-            RememberRejected(fnSw);
-            Interlocked.Exchange(ref _resendRequested, 1);
+            RememberRejected(fnSw, invalid: true);
         }
         // istu grešku zapiši najviše jednom u minuti (da log ne naraste)
         int key = (feature << 16) | (fnSw << 8) | code;

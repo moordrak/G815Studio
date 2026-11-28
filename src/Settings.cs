@@ -183,6 +183,7 @@ public sealed class DevicePlacement
     public bool Vertical;                 // traka okomito
     public bool Reverse;                  // LED-ice obrnutim redom (drugi smjer)
     public bool Mirror;                   // zrcalno: druga polovica uređaja ponavlja prvu
+    public bool Linear;                   // krug: efekt ide redom LED-ica kao po ravnoj traci, ne po krugu
     public float Size;                    // duljina trake / promjer kruga u jedinicama tipki; 0 = zadano
 }
 
