@@ -131,9 +131,15 @@ public sealed class AppController : IDisposable
 
     // ------------------------------------------------------------ profili
 
+    /// <summary>Samo za snimke zaslona: nacrtaj miša s ovoliko LED-ica i kad miš nije spojen.</summary>
+    public int PreviewMouseZones { get; set; }
+
+    private int MouseZonesForLayout() =>
+        Settings.MouseEnabled && Mouse.IsConnected ? Mouse.ClusterCount : PreviewMouseZones;
+
     public void RebuildKeys()
     {
-        int mz = Settings.MouseEnabled && Mouse.IsConnected ? Mouse.ClusterCount : 0;
+        int mz = MouseZonesForLayout();
         _mouseZonesInLayout = mz;
         Keys = KeyLayouts.Build(IsIso, Settings.ZoneOverrides, mz);
         Engine.SetKeys(Keys);
@@ -380,7 +386,7 @@ public sealed class AppController : IDisposable
 
     private void OnMouseChanged()
     {
-        int mz = Settings.MouseEnabled && Mouse.IsConnected ? Mouse.ClusterCount : 0;
+        int mz = MouseZonesForLayout();
         if (mz != _mouseZonesInLayout) RebuildKeys();
         ApplyMouseMode();
         if (Mouse.IsConnected) Notify?.Invoke("Miš spojen: " + Mouse.Name);

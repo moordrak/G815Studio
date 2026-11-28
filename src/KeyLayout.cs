@@ -28,6 +28,19 @@ public static class KeyLayouts
     public static byte ZoneFromUsage(int usage) =>
         usage >= 0xE0 && usage <= 0xE7 ? (byte)(usage - 0x78) : (byte)(usage - 0x03);
 
+    // Miš na slici, u jedinicama tipki (isti koordinatni sustav kao tipke): okvir tijela i luk LED-ica.
+    public const float MouseX = 25.4f, MouseY = 1.15f, MouseW = 3.8f, MouseH = 7.0f;
+    public const float MouseLedSize = 0.42f;
+
+    /// <summary>Središte i-te LED-ice miša: luk preko stražnjeg dijela, slijeva nadesno.</summary>
+    public static (float X, float Y) MouseLed(int i, int count)
+    {
+        double t = count <= 1 ? 0.5 : (double)i / (count - 1);
+        double a = (160 - 140 * t) * Math.PI / 180;       // 160° (lijevo) → 20° (desno), kroz dno luka
+        float cx = MouseX + MouseW * 0.52f, cy = MouseY + MouseH * 0.6f;
+        return ((float)(cx + Math.Cos(a) * 1.3), (float)(cy + Math.Sin(a) * 0.95));
+    }
+
     public static List<KeyDef> Build(bool iso, IDictionary<string, int> overrides, int mouseZones = 0)
     {
         var keys = new List<KeyDef>();
@@ -170,16 +183,18 @@ public static class KeyLayouts
         R("MEDIA_NEXT", "Sljedeća", 0x9D, 20.5f, oy, "media");
         R("MEDIA_MUTE", "Utišaj", 0x9C, 21.5f, oy, "media");
 
-        // Zone miša: virtualne tipke desno od numeričke tipkovnice, pa efekti (val, vatra…) "prelaze" i na miš.
-        // Ne crtaju se na slici i ne šalju se tipkovnici (zone 0xF0+).
-        for (int i = 0; i < mouseZones && i < 16; i++)
+        // Zone miša: LED-ice nacrtanog miša desno od tipkovnice (traka u luku preko stražnjeg dijela),
+        // pa efekti (val, vatra…) "prelaze" i na miš. Ne šalju se tipkovnici (zone 0xF0+).
+        int n = Math.Min(mouseZones, 16);
+        for (int i = 0; i < n; i++)
         {
             byte z = (byte)(0xF0 + i);
+            var (cx, cy) = MouseLed(i, n);
             keys.Add(new KeyDef
             {
                 Id = "MOUSE" + i, Label = "Miš " + (i + 1), DefaultZone = z, Zone = z,
-                // LED-ice miša složene u stupac desno od numeričke tipkovnice
-                X = ox + 23.5f, Y = oy + 0.25f + i * (6.0f / Math.Max(1, Math.Min(mouseZones, 16))), W = 1, H = 1, Group = "mouse", Shape = "mouse"
+                X = cx - MouseLedSize / 2, Y = cy - MouseLedSize / 2, W = MouseLedSize, H = MouseLedSize,
+                Group = "mouse", Shape = "mouse"
             });
         }
 

@@ -95,6 +95,9 @@ internal sealed class ScreenshotRunner : ApplicationContext
     private static void Prepare(AppController c)
     {
         var s = c.Settings;
+        // na snimkama se vidi i miš (G502 X PLUS ima 8 LED-ica), iako na runneru nije spojen
+        c.PreviewMouseZones = 8;
+        c.RebuildKeys();
         var main = c.ManualProfile;
         var L = main.Lighting;
         foreach (var id in new[] { "U1A", "U04", "U16", "U07" }) L.KeyColors[id] = "#FF2A4D";

@@ -489,6 +489,7 @@ public sealed class MainForm : Form
         Q("Modifikatori", k => k.Group == "mods");
         Q("G tipke + logo", k => k.Group is "g" or "logo");
         Q("Mediji i gornje tipke", k => k.Group is "media" or "top");
+        Q("Miš", k => k.Group == "mouse");
         quick.Controls.Add(Ui.Btn("Poništi odabir", (_, _) => _kbView.ClearSelection(), 200));
         controls.Controls.Add(Ui.Group("Brzi odabir (Ctrl = dodaj)", quick));
 
