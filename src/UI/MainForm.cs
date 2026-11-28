@@ -1126,7 +1126,8 @@ public sealed class MainForm : Form
             _devVertical.Checked = p?.Vertical == true;
             _devReverse.Checked = p?.Reverse == true;
             _devSize.Value = Math.Clamp((decimal)(p?.Size ?? 0), _devSize.Minimum, _devSize.Maximum);
-            _devShape.Enabled = _devReverse.Enabled = _devSize.Enabled = pc;
+            _devShape.Enabled = _devSize.Enabled = pc;
+            _devReverse.Enabled = item != null;          // smjer se mijenja na svim uređajima osim tipkovnice
             _devVertical.Enabled = pc && !ring;
         }
         finally { _loading = was; }
@@ -1134,8 +1135,14 @@ public sealed class MainForm : Form
 
     private void SaveDevicePlacement(bool shapeChanged = false)
     {
-        if (_loading || _devCombo.SelectedItem is not DeviceItem item || !item.Id.StartsWith("pc:", StringComparison.Ordinal)) return;
+        if (_loading || _devCombo.SelectedItem is not DeviceItem item) return;
         var p = _c.GetPlacement(item.Id);
+        if (!item.Id.StartsWith("pc:", StringComparison.Ordinal))
+        {
+            p.Reverse = _devReverse.Checked;    // miš i memorija: samo smjer (i položaj povlačenjem)
+            _c.PlacementChanged();
+            return;
+        }
         p.Shape = _devShape.SelectedIndex == 1 ? "ring" : "line";
         if (shapeChanged)
         {

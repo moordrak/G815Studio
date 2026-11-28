@@ -226,7 +226,7 @@ public static class KeyLayouts
         for (int i = 0; i < n; i++)
         {
             int z = 0xF0 + i;
-            var (cx, cy) = MouseLed(i, n, mx, my);
+            var (cx, cy) = MouseLed(mp?.Reverse == true ? n - 1 - i : i, n, mx, my);
             keys.Add(new KeyDef
             {
                 Id = "MOUSE" + i, Label = "Miš " + (i + 1), DefaultZone = z, Zone = z,
@@ -298,10 +298,11 @@ public static class KeyLayouts
             {
                 int z = RamZoneBase + s * RamSegments + i;
                 float segH = RamH / RamSegments;
+                int j = rp?.Reverse == true ? RamSegments - 1 - i : i;     // zadano odozdo prema gore
                 keys.Add(new KeyDef
                 {
                     Id = $"RAM{s}_{i}", Label = $"RAM {s + 1} · {i + 1}", DefaultZone = z, Zone = z,
-                    X = rx + s * RamGap, Y = ry + RamH - (i + 1) * segH, W = RamW, H = segH,
+                    X = rx + s * RamGap, Y = ry + RamH - (j + 1) * segH, W = RamW, H = segH,
                     Group = "ram", Shape = "ram",
                     Device = "ram", DeviceName = "RAM", DevX = rx, DevY = ry, DevW = (sticks - 1) * RamGap + RamW, DevH = RamH
                 });
